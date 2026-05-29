@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Society Maintenance Portal — Prototype</title>
+<style>
+  :root{
+    --green:#2e7d32; --green-bg:#e6f4ea;
+    --red:#c62828;   --red-bg:#fdecea;
+    --blue:#1565c0;  --blue-bg:#e8f0fe;
+    --ink:#1f2933;   --muted:#6b7280; --line:#e3e8ef; --bg:#f4f6fa;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink)}
+  button{font-family:inherit;cursor:pointer}
+  .hidden{display:none!important}
+
+  /* Menu / top bar */
+  .navbar{background:var(--blue);color:#fff;padding:0 22px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 6px rgba(0,0,0,.15);height:56px}
+  .navbar .brand{font-size:18px;font-weight:700;display:flex;align-items:center;gap:8px}
+  .menu{display:flex;align-items:center;height:100%}
+  .menu .item{background:transparent;border:none;color:#fff;font-size:14px;font-weight:600;height:100%;padding:0 18px;border-bottom:3px solid transparent;opacity:.9}
+  .menu .item:hover{opacity:1;background:rgba(255,255,255,.08)}
+  .menu .item.active{opacity:1;border-bottom-color:#fff}
+  .who{font-size:13px;opacity:.95;display:flex;align-items:center;gap:6px}
+  .who b{font-weight:700}
+  .pill{background:rgba(255,255,255,.2);padding:3px 10px;border-radius:20px;font-size:12px}
+  .logout{background:#fff;color:var(--blue);border:none;border-radius:6px;padding:6px 12px;font-weight:600;font-size:13px;margin-left:6px}
+
+  /* Layout */
+  .wrap{max-width:1080px;margin:0 auto;padding:20px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+  .card h2{margin:0 0 4px;font-size:16px}
+  .card .sub{color:var(--muted);font-size:13px;margin:0 0 14px}
+  .narrow{max-width:480px;margin:26px auto}
+
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  tr:hover td{background:#fafbfd}
+  .num{text-align:right;font-variant-numeric:tabular-nums}
+
+  .badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700}
+  .badge.cleared{background:var(--green-bg);color:var(--green)}
+  .badge.pending{background:var(--red-bg);color:var(--red)}
+  .badge.open{background:var(--blue-bg);color:var(--blue)}
+  .badge.resolved{background:var(--green-bg);color:var(--green)}
+
+  .btn{background:var(--blue);color:#fff;border:none;border-radius:8px;padding:9px 16px;font-weight:600;font-size:14px}
+  .btn.ghost{background:#fff;color:var(--blue);border:1px solid var(--blue)}
+  .btn.sm{padding:5px 11px;font-size:13px}
+  .btn:disabled{background:#c7ccd6;cursor:not-allowed}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  .right{margin-left:auto}
+
+  /* Dashboard stat tiles */
+  .stats{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:4px}
+  .stat{flex:1;min-width:190px;background:#fff;border:1px solid var(--line);border-left:5px solid var(--blue);border-radius:12px;padding:16px 18px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+  .stat.green{border-left-color:var(--green)} .stat.red{border-left-color:var(--red)} .stat.blue{border-left-color:var(--blue)}
+  .stat .s-label{font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700}
+  .stat .s-val{font-size:26px;font-weight:800;margin:4px 0 2px;font-variant-numeric:tabular-nums}
+  .stat .s-sub{font-size:12px;color:var(--muted)}
+  tfoot td{border-top:2px solid var(--line);border-bottom:none}
+
+  /* Category bars */
+  .bar-row{display:flex;align-items:center;gap:12px;margin:8px 0}
+  .bar-label{width:110px;font-size:13px;font-weight:600}
+  .bar-track{flex:1;height:14px;background:var(--bg);border-radius:7px;overflow:hidden}
+  .bar-fill{display:block;height:100%;background:var(--blue);border-radius:7px}
+  .bar-val{width:90px;text-align:right;font-size:13px;font-variant-numeric:tabular-nums}
+
+  label{display:block;font-size:13px;font-weight:600;margin:10px 0 4px;color:#374151}
+  input,select,textarea{width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;font-size:14px;font-family:inherit}
+  textarea{resize:vertical;min-height:70px}
+
+  /* Image upload + thumbnails */
+  .dropzone{border:1.5px dashed var(--blue);background:var(--blue-bg);border-radius:10px;padding:14px;text-align:center;color:var(--blue);font-size:13px;font-weight:600}
+  .thumbs{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .thumb{position:relative;width:72px;height:72px;border-radius:8px;overflow:hidden;border:1px solid var(--line)}
+  .thumb img{width:100%;height:100%;object-fit:cover;display:block;cursor:pointer}
+  .thumb .x{position:absolute;top:2px;right:2px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:12px;line-height:1;cursor:pointer}
+  .row-thumbs{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+  .row-thumbs img{width:46px;height:46px;object-fit:cover;border-radius:6px;border:1px solid var(--line);cursor:pointer}
+
+  /* Modal */
+  .overlay{position:fixed;inset:0;background:rgba(15,23,42,.45);display:flex;align-items:center;justify-content:center;padding:20px;z-index:50}
+  .modal{background:#fff;border-radius:14px;max-width:460px;width:100%;padding:22px;box-shadow:0 12px 40px rgba(0,0,0,.25);max-height:90vh;overflow:auto}
+  .modal h3{margin:0 0 2px;font-size:18px}
+  .modal .sub{color:var(--muted);font-size:13px;margin:0 0 14px}
+  .modal .alert-icon{font-size:34px}
+  .kv{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px dashed var(--line);font-size:14px}
+  .kv b{font-variant-numeric:tabular-nums}
+  .lightbox img{max-width:86vw;max-height:86vh;border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.4)}
+
+  /* Landing */
+  .hero{text-align:center;padding:56px 20px 24px}
+  .hero .logo{font-size:54px}
+  .hero h1{margin:8px 0 2px;font-size:26px}
+  .hero p{color:var(--muted);margin:0 auto 22px;max-width:520px}
+  .hero .row{justify-content:center}
+  .rolebtn{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+  .rolebtn:hover{border-color:var(--blue);background:var(--blue-bg)}
+  .rolebtn .r-name{font-weight:700}
+  .rolebtn .r-desc{font-size:12px;color:var(--muted)}
+  .rolebtn .av{width:38px;height:38px;border-radius:50%;background:var(--blue);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
+
+  .hint{font-size:12px;color:var(--muted);margin-top:6px}
+  .ok{background:var(--green-bg);color:var(--green);border-radius:8px;padding:10px 12px;font-size:13px;font-weight:600}
+  .demoflag{position:fixed;bottom:10px;right:12px;background:#111827;color:#fff;font-size:11px;padding:4px 10px;border-radius:6px;opacity:.8}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div class="demoflag">PROTOTYPE · in-memory data · resets on refresh</div>
+
+<script>
+/* ============================================================
+   Society Maintenance Portal — clickable prototype
+   Single file, no dependencies. State lives in memory.
+   ============================================================ */
+
+const TODAY = new Date('2026-05-27');
+const TODAY_STR = '2026-05-27';
+
+function currentCycle(plan){
+  const y=TODAY.getFullYear(), m=TODAY.getMonth()+1;
+  if(plan==='Monthly')   return `${y}-${String(m).padStart(2,'0')}`;
+  if(plan==='Quarterly') return `${y}-Q${Math.floor((m-1)/3)+1}`;
+  return `${y}`;
+}
+
+const state = {
+  user: null,
+  landing: 'home',        // home | signin | signup | complaint  (pre-login)
+  tab: 'householders',    // householders | complaints          (post-login)
+  modal: null,
+  draftImages: [],        // staged images for the complaint form
+  households: [
+    { id:1, house:'A-101', name:'R. Sharma',  contact:'98xxxx01', plan:'Monthly',   amount:3000,  paidThisCycle:3000,  advance:500,  lastPaid:'2026-05-04', userRole:'Householder' },
+    { id:2, house:'B-204', name:'S. Reddy',   contact:'98xxxx02', plan:'Quarterly', amount:9000,  paidThisCycle:4000,  advance:0,    lastPaid:'2026-04-18', userRole:'Secretary' },
+    { id:3, house:'C-310', name:'A. Khan',    contact:'98xxxx03', plan:'Monthly',   amount:3000,  paidThisCycle:0,     advance:0,    lastPaid:'2026-03-30', userRole:null },
+    { id:4, house:'D-012', name:'P. Mehta',   contact:'98xxxx04', plan:'Annual',    amount:30000, paidThisCycle:30000, advance:0,    lastPaid:'2026-01-09', userRole:'President' },
+    { id:5, house:'A-105', name:'L. Iyer',    contact:'98xxxx05', plan:'Monthly',   amount:3000,  paidThisCycle:0,     advance:3500, lastPaid:'2026-04-02', userRole:null },
+  ],
+  complaints: [
+    { id:1, author:'Householder', authorName:'R. Sharma', title:'Lift in B-wing noisy',      desc:'The B-wing lift makes loud grinding noises since last week.', post:'2026-05-20', resolved:null,        images:[] },
+    { id:2, author:'Secretary',   authorName:'S. Reddy',  title:'Garden lights not working', desc:'Lights near the play area have been off for 3 nights.',        post:'2026-05-12', resolved:'2026-05-18', images:[] },
+  ],
+  payments: [   // individual maintenance payments (FR-10) — feeds My Payments & Collected Balance
+    { id:1, house:'A-101', date:'2026-05-04', amount:3500,  cycle:'2026-05' },
+    { id:2, house:'A-101', date:'2026-04-03', amount:3000,  cycle:'2026-04' },
+    { id:3, house:'B-204', date:'2026-04-18', amount:4000,  cycle:'2026-Q2' },
+    { id:4, house:'D-012', date:'2026-01-09', amount:30000, cycle:'2026'    },
+    { id:5, house:'A-105', date:'2026-04-02', amount:3500,  cycle:'2026-04' },
+  ],
+  expenses: [   // society expenditure — feeds Expenditure & Collected Balance
+    { id:1, date:'2026-05-20', category:'Security',     desc:'Guard agency — May',         amount:12000 },
+    { id:2, date:'2026-05-15', category:'Electricity',  desc:'Common area + lift power',    amount:6500  },
+    { id:3, date:'2026-05-10', category:'Housekeeping', desc:'Monthly housekeeping staff',  amount:8000  },
+    { id:4, date:'2026-04-28', category:'Plumbing',     desc:'B-wing leak repair',          amount:3200  },
+    { id:5, date:'2026-03-30', category:'Gardening',    desc:'Garden upkeep',               amount:2500  },
+  ],
+  nextPayId: 89,
+  nextPaymentRecId: 6,
+  nextComplaintId: 3,
+  nextExpenseId: 6,
+};
+
+const ROLES = {
+  Treasurer:   { desc:'Sole admin — records payments, manages plans & users', sample:'T. Nair' },
+  Householder: { desc:'Read-only resident — sees dues, posts complaints',      sample:'R. Sharma', house:'A-101' },
+  Secretary:   { desc:'Read-only oversight — views all dues & complaints',     sample:'S. Reddy',  house:'B-204' },
+  President:   { desc:'Read-only oversight — views all dues & complaints',     sample:'P. Mehta',  house:'D-012' },
+};
+
+/* Demo accounts — sign-in requires valid credentials (FR-1). */
+const USERS = [
+  { email:'treasurer@society.in', password:'demo123', role:'Treasurer',   name:'T. Nair',   house:null    },
+  { email:'sharma@society.in',    password:'demo123', role:'Householder', name:'R. Sharma', house:'A-101' },
+  { email:'reddy@society.in',     password:'demo123', role:'Secretary',   name:'S. Reddy',  house:'B-204' },
+  { email:'mehta@society.in',     password:'demo123', role:'President',   name:'P. Mehta',  house:'D-012' },
+];
+
+function statusOf(h){
+  const credit=h.paidThisCycle+h.advance;
+  const balance=Math.max(0,h.amount-credit);
+  return { balance, status: balance===0?'Cleared':'Pending', cycle: currentCycle(h.plan) };
+}
+const money = n => '₹' + Number(n).toLocaleString('en-IN');
+const sum = (arr,f) => arr.reduce((a,x)=>a+f(x),0);
+const totalCollected   = () => sum(state.payments, p=>p.amount);
+const totalExpenses    = () => sum(state.expenses, e=>e.amount);
+const totalOutstanding = () => sum(state.households, h=>statusOf(h).balance);
+
+function recordPayment(h, amount, date){
+  const newPaid=h.paidThisCycle+amount, totalCredit=newPaid+h.advance;
+  let balanceAfter, advanceAfter, status;
+  if(totalCredit>=h.amount){
+    balanceAfter=0; advanceAfter=totalCredit-h.amount; h.paidThisCycle=h.amount; h.advance=advanceAfter; status='Cleared';
+  } else {
+    balanceAfter=h.amount-totalCredit; h.paidThisCycle=newPaid; h.advance=0; advanceAfter=0; status='Pending';
+  }
+  h.lastPaid = date || TODAY_STR;   // save the date the payment was made
+  return { balanceAfter, advanceAfter, status, isPartial: amount>0 && status==='Pending' };
+}
+
+/* ============================================================ Rendering */
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function render(){
+  const app=$('#app');
+  app.innerHTML = state.user ? appShell() : landingShell();
+  if(state.modal) app.insertAdjacentHTML('beforeend', modalView());
+}
+
+/* ---------- Landing (pre-login) ---------- */
+function landingShell(){
+  const L=state.landing;
+  const nav=`<div class="navbar">
+    <div class="brand">🏢 Society Maintenance Portal</div>
+    <div class="menu">
+      <button class="item ${L==='home'?'active':''}" onclick="setLanding('home')">Home</button>
+      <button class="item ${L==='signin'?'active':''}" onclick="setLanding('signin')">Sign In</button>
+      <button class="item ${L==='signup'?'active':''}" onclick="setLanding('signup')">Sign Up</button>
+    </div></div>`;
+  let body='';
+  if(L==='home')   body=homeView();
+  if(L==='signin') body=signinView();
+  if(L==='signup') body=signupView();
+  return nav + `<div class="wrap">${body}</div>`;
+}
+
+function homeView(){
+  return `<div class="hero">
+    <div class="logo">🏢</div>
+    <h1>Welcome to the Society Maintenance Portal</h1>
+    <p>Track maintenance dues, record payments, and raise complaints — all in one place.
+       Sign in to view dues and raise complaints, or register for a new account.</p>
+    <div class="row">
+      <button class="btn" onclick="setLanding('signin')">Sign In</button>
+      <button class="btn ghost" onclick="setLanding('signup')">Sign Up</button>
+    </div>
+    <p class="hint">Raising a complaint requires signing in — open to all roles once authenticated (FR-18).</p>
+  </div>`;
+}
+
+function signinView(){
+  const demo=USERS.map(u=>`
+    <button class="rolebtn" onclick="fillCreds('${u.email}')">
+      <span class="av">${u.role[0]}</span>
+      <span><span class="r-name">${u.role}</span> — ${esc(u.name)}<br>
+        <span class="r-desc">${u.email}</span></span>
+    </button>`).join('');
+  return `<div class="card narrow">
+    <h2>Sign In</h2>
+    <p class="sub">Enter your credentials to access the portal (FR-1). Access to maintenance details requires authentication.</p>
+    <label>Email</label><input id="liEmail" type="email" placeholder="you@society.in" />
+    <label>Password</label><input id="liPass" type="password" placeholder="Password" onkeydown="if(event.key==='Enter')doSignin()" />
+    <div id="liErr" class="hint" style="color:var(--red)"></div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn" onclick="doSignin()">Sign In</button>
+      <button class="btn ghost" onclick="setLanding('signup')">Create account</button>
+    </div>
+    <p class="hint" style="margin-top:16px"><b>Demo accounts</b> (click to fill — password <code>demo123</code>):</p>
+    ${demo}
+  </div>`;
+}
+
+function signupView(){
+  return `<div class="card narrow">
+    <h2>Sign Up</h2>
+    <p class="sub">Request a resident account. The Treasurer approves and assigns your role (FR-4a).</p>
+    <label>Full name</label><input id="suName" placeholder="e.g. R. Sharma" />
+    <label>Email</label><input id="suEmail" type="email" placeholder="you@example.com" />
+    <label>House No.</label><input id="suHouse" placeholder="e.g. A-101" />
+    <label>Requested role</label>
+    <select id="suRole">
+      <option>Householder</option><option>Secretary</option><option>President</option>
+    </select>
+    <label>Password</label><input id="suPass" type="password" placeholder="Choose a password" />
+    <div class="row" style="margin-top:14px">
+      <button class="btn" onclick="submitSignup()">Create account</button>
+      <button class="btn ghost" onclick="setLanding('signin')">Back to Sign In</button>
+    </div>
+  </div>`;
+}
+
+/* ---------- App shell (post-login) ---------- */
+function appShell(){
+  const u=state.user;
+  const nav=`<div class="navbar">
+    <div class="brand">🏢 Society Maintenance Portal</div>
+    <div class="menu">
+      <button class="item ${state.tab==='householders'?'active':''}" onclick="go('householders')">Dues</button>
+      <button class="item ${state.tab==='expenditure'?'active':''}" onclick="go('expenditure')">Expenditure</button>
+      <button class="item ${state.tab==='mypayments'?'active':''}" onclick="go('mypayments')">My Payments</button>
+      <button class="item ${state.tab==='balance'?'active':''}" onclick="go('balance')">Collected Balance</button>
+      <button class="item ${state.tab==='complaints'?'active':''}" onclick="go('complaints')">Complaints</button>
+    </div>
+    <div class="who"><span>Hi, <b>${esc(u.name)}</b></span>
+      <span class="pill">${esc(u.role)}</span>
+      <span class="pill">${u.role==='Treasurer'?'Admin':'Read-only'}</span>
+      <button class="logout" onclick="logout()">Sign out</button></div>
+  </div>`;
+  let body;
+  if(state.tab==='householders')      body=householdersView();
+  else if(state.tab==='expenditure')  body=expenditureView();
+  else if(state.tab==='mypayments')   body=myPaymentsView();
+  else if(state.tab==='balance')      body=balanceView();
+  else                                body=complaintsView();
+  return nav + `<div class="wrap">${body}</div>`;
+}
+
+function householdersView(){
+  const isT=state.user.role==='Treasurer';
+  const rows=state.households.map(h=>{
+    const s=statusOf(h);
+    return `<tr>
+      <td><b>${esc(h.house)}</b></td><td>${esc(h.name)}</td><td>${h.plan}</td>
+      <td class="num">${money(h.amount)}</td>
+      <td class="num">${s.balance>0?money(s.balance):'—'}</td>
+      <td class="num">${h.advance>0?money(h.advance):'—'}</td>
+      <td>${h.lastPaid||'—'}</td>
+      <td><span class="badge ${s.status.toLowerCase()}">${s.status}</span></td>
+      <td>${isT?`<button class="btn ghost sm" onclick="openPay(${h.id})">Record payment</button>`:''}</td>
+    </tr>`;
+  }).join('');
+  const tools=isT?`<div class="row" style="margin-bottom:14px">
+      <button class="btn" onclick="openLookup()">🔎 House No. lookup</button>
+      <span class="hint">Last payment relative to the plan (FR-17a).</span></div>`
+    :`<p class="sub">Read-only access. All roles can view every unit's dues (FR-4).</p>`;
+  return `<div class="card">
+    <h2>Maintenance Dues — Current Cycle</h2>
+    <p class="sub">Status, balance and advances are computed automatically from recorded payments and each unit's plan.</p>
+    ${tools}
+    <table><thead><tr><th>House</th><th>Resident</th><th>Plan</th><th class="num">Per cycle</th>
+      <th class="num">Balance</th><th class="num">Advance</th><th>Last paid</th><th>Status</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`;
+}
+
+/* ---------- Dashboard 1: Expenditure ---------- */
+function expenditureView(){
+  const isT=state.user.role==='Treasurer';
+  const total=totalExpenses();
+  const rows=state.expenses.map(e=>`<tr>
+      <td>${e.date}</td><td>${esc(e.category)}</td><td>${esc(e.desc)}</td>
+      <td class="num">${money(e.amount)}</td></tr>`).join('');
+  const cats={}; state.expenses.forEach(e=>cats[e.category]=(cats[e.category]||0)+e.amount);
+  const bars=Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`
+    <div class="bar-row"><span class="bar-label">${esc(c)}</span>
+      <span class="bar-track"><span class="bar-fill" style="width:${(v/total*100).toFixed(0)}%"></span></span>
+      <span class="bar-val">${money(v)}</span></div>`).join('');
+  return `<div class="stats">
+      <div class="stat red"><div class="s-label">Total expenditure</div><div class="s-val">${money(total)}</div><div class="s-sub">${state.expenses.length} entries</div></div>
+    </div>
+    <div class="card"><div class="row"><div><h2>Society Expenditure</h2>
+      <p class="sub">Money spent on upkeep and shared services.</p></div>
+      ${isT?'<button class="btn right" onclick="openExpense()">+ Add expense</button>':'<span class="right hint">Read-only view</span>'}</div>
+      <table><thead><tr><th>Date</th><th>Category</th><th>Description</th><th class="num">Amount</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><td colspan="3" style="text-align:right;font-weight:700">Total</td>
+          <td class="num" style="font-weight:700">${money(total)}</td></tr></tfoot></table></div>
+    <div class="card"><h2>By category</h2><p class="sub">Share of total spend.</p>${bars}</div>`;
+}
+
+/* ---------- Dashboard 2: My Payment History ---------- */
+function myPaymentsView(){
+  const house=state.user.house;
+  if(!house) return `<div class="card"><h2>My Payment History</h2>
+    <p class="sub">Your account (${esc(state.user.role)}) isn't linked to a household unit, so there are no maintenance payments to show.</p></div>`;
+  const h=state.households.find(x=>x.house===house), s=statusOf(h);
+  const mine=state.payments.filter(p=>p.house===house).slice().sort((a,b)=>b.date.localeCompare(a.date));
+  const paid=sum(mine,p=>p.amount);
+  const rows=mine.length?mine.map(p=>`<tr><td>${p.date}</td><td>${p.cycle}</td><td class="num">${money(p.amount)}</td></tr>`).join('')
+    :`<tr><td colspan="3" class="sub">No payments recorded yet.</td></tr>`;
+  return `<div class="stats">
+      <div class="stat"><div class="s-label">My unit</div><div class="s-val">${esc(house)}</div><div class="s-sub">${h.plan} · ${money(h.amount)}/cycle</div></div>
+      <div class="stat green"><div class="s-label">Total paid (all time)</div><div class="s-val">${money(paid)}</div><div class="s-sub">${mine.length} payments</div></div>
+      <div class="stat ${s.status==='Cleared'?'green':'red'}"><div class="s-label">Current status</div>
+        <div class="s-val"><span class="badge ${s.status.toLowerCase()}">${s.status}</span></div>
+        <div class="s-sub">balance ${money(s.balance)} · advance ${money(h.advance)}</div></div>
+    </div>
+    <div class="card"><h2>My Payment History — ${esc(house)}</h2>
+      <p class="sub">Every maintenance payment recorded for your unit (FR-10).</p>
+      <table><thead><tr><th>Date paid</th><th>Cycle covered</th><th class="num">Amount</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><td colspan="2" style="text-align:right;font-weight:700">Total paid</td>
+          <td class="num" style="font-weight:700">${money(paid)}</td></tr></tfoot></table></div>`;
+}
+
+/* ---------- Dashboard 3: Collected Balance (maintenance vs expenses) ---------- */
+function balanceView(){
+  const collected=totalCollected(), expenses=totalExpenses(), net=collected-expenses, outstanding=totalOutstanding();
+  return `<div class="stats">
+      <div class="stat green"><div class="s-label">Maintenance collected</div><div class="s-val">${money(collected)}</div><div class="s-sub">${state.payments.length} payments</div></div>
+      <div class="stat red"><div class="s-label">Total expenditure</div><div class="s-val">${money(expenses)}</div><div class="s-sub">${state.expenses.length} expenses</div></div>
+      <div class="stat blue"><div class="s-label">Net available balance</div><div class="s-val">${money(net)}</div><div class="s-sub">collected − expenses</div></div>
+    </div>
+    <div class="card"><h2>Collected Balance — Society Funds</h2>
+      <p class="sub">How the society's money adds up this period.</p>
+      <div class="kv"><span>Total maintenance collected</span><b style="color:var(--green)">${money(collected)}</b></div>
+      <div class="kv"><span>Less: total expenditure</span><b style="color:var(--red)">− ${money(expenses)}</b></div>
+      <div class="kv" style="border-bottom:2px solid var(--ink)"><span><b>Net available balance</b></span><b>${money(net)}</b></div>
+      <div class="kv"><span>Outstanding dues (yet to collect)</span><b>${money(outstanding)}</b></div>
+      <div class="kv"><span>Projected balance if all dues clear</span><b style="color:var(--blue)">${money(net+outstanding)}</b></div>
+      <p class="hint">Net available = total maintenance collected − total expenditure. Outstanding dues are sums of every unit's current-cycle balance (FR-9 / FR-12).</p>
+    </div>`;
+}
+
+function complaintsView(){
+  const rows=state.complaints.map(c=>{
+    const mine=c.author===state.user.role && c.authorName===state.user.name;
+    const canResolve=mine && !c.resolved;
+    const imgs=(c.images&&c.images.length)?`<div class="row-thumbs">${
+      c.images.map(src=>`<img src="${src}" onclick="openImage('${src}')" />`).join('')}</div>`:'';
+    return `<tr>
+      <td><b>${esc(c.title)}</b><div class="sub" style="margin:2px 0 0">${esc(c.desc)}</div>${imgs}</td>
+      <td>${esc(c.authorName)}<div class="sub">${c.author}</div></td>
+      <td>${c.post}</td><td>${c.resolved||'—'}</td>
+      <td><span class="badge ${c.resolved?'resolved':'open'}">${c.resolved?'Resolved':'Open'}</span></td>
+      <td>${canResolve?`<button class="btn ghost sm" onclick="resolveComplaint(${c.id})">Mark resolved</button>`:''}</td>
+    </tr>`;
+  }).join('');
+  return `<div class="card">
+    <div class="row"><div><h2>Complaints &amp; Concerns</h2>
+      <p class="sub">Anyone can post (with photos); only the author can resolve their own (BR-3).</p></div>
+      <button class="btn right" onclick="openComplaint()">+ New complaint</button></div>
+    <table><thead><tr><th>Complaint</th><th>Posted by</th><th>Post date</th><th>Resolved date</th><th>State</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`;
+}
+
+/* ---------- Shared image uploader ---------- */
+function imageUploader(){
+  return `<label>Attach photos (optional)</label>
+    <input id="imgInput" type="file" accept="image/*" multiple style="display:none" onchange="addImages(this)" />
+    <div class="dropzone" onclick="document.getElementById('imgInput').click()">📷 Click to add images</div>
+    <div class="thumbs" id="thumbs">${thumbsHTML()}</div>`;
+}
+function thumbsHTML(){
+  return state.draftImages.map((img,i)=>`<div class="thumb">
+    <img src="${img.dataUrl}" onclick="openImage('${img.dataUrl}')" title="${esc(img.name)}" />
+    <button class="x" onclick="removeDraftImg(${i})" title="Remove">×</button></div>`).join('');
+}
+function renderThumbs(){ const el=document.getElementById('thumbs'); if(el) el.innerHTML=thumbsHTML(); }
+function addImages(input){
+  const files=[...input.files];
+  let pending=files.length;
+  files.forEach(f=>{
+    if(!f.type.startsWith('image/')){ pending--; return; }
+    const r=new FileReader();
+    r.onload=e=>{ state.draftImages.push({name:f.name, dataUrl:e.target.result}); if(--pending<=0) renderThumbs(); else renderThumbs(); };
+    r.readAsDataURL(f);
+  });
+  input.value=''; // allow re-selecting same file
+}
+function removeDraftImg(i){ state.draftImages.splice(i,1); renderThumbs(); }
+
+/* ============================================================ Modals */
+function modalView(){
+  const m=state.modal; let body='';
+  if(m.type==='due')       body=dueModal(m);
+  if(m.type==='pay')       body=payModal(m);
+  if(m.type==='lookup')    body=lookupModal(m);
+  if(m.type==='complaint') body=complaintModal();
+  if(m.type==='expense')   body=expenseModal();
+  if(m.type==='image')     return `<div class="overlay lightbox" onclick="closeModal()"><img src="${m.src}" /></div>`;
+  return `<div class="overlay" onclick="if(event.target===this)closeModal()"><div class="modal">${body}</div></div>`;
+}
+
+function dueModal(m){
+  const h=m.h, s=statusOf(h);
+  return `<div class="alert-icon">🔔</div><h3>Maintenance due</h3>
+    <p class="sub">Reminder for ${esc(h.house)} · ${h.plan} plan · cycle ${s.cycle}</p>
+    <div class="kv"><span>Amount due this cycle</span><b>${money(h.amount)}</b></div>
+    <div class="kv"><span>Outstanding balance</span><b style="color:var(--red)">${money(s.balance)}</b></div>
+    <div class="kv"><span>Advance / credit available</span><b>${money(h.advance)}</b></div>
+    <p class="hint">Please clear your dues with the Treasurer. (FR-15 / FR-16)</p>
+    <div class="row" style="margin-top:14px"><button class="btn right" onclick="closeModal()">Got it</button></div>`;
+}
+
+function payModal(m){
+  const h=state.households.find(x=>x.id===m.id), s=statusOf(h);
+  if(m.result){ const res=m.result;
+    return `<h3>Payment recorded ✅</h3>
+      <p class="sub">Receipt #${m.payId} · ${esc(h.house)} · applied to ${s.cycle}</p>
+      <div class="kv"><span>Payment date</span><b>${m.date}</b></div>
+      <div class="kv"><span>Amount paid</span><b>${money(m.amount)}</b></div>
+      <div class="kv"><span>Balance after</span><b>${money(res.balanceAfter)}</b></div>
+      <div class="kv"><span>Advance after</span><b>${money(res.advanceAfter)}</b></div>
+      <div class="kv"><span>New status</span><span class="badge ${res.status.toLowerCase()}">${res.status}</span></div>
+      ${res.isPartial?'<p class="hint">Partial payment — balance remains for this cycle (FR-11).</p>':''}
+      <div class="row" style="margin-top:14px"><button class="btn right" onclick="closeModal()">Done</button></div>`;
+  }
+  return `<h3>Record payment</h3>
+    <p class="sub">${esc(h.house)} · ${esc(h.name)} · ${h.plan} · due ${money(s.balance)} this cycle</p>
+    <label>Date of payment</label><input id="payDate" type="date" value="2026-05-27" />
+    <label>Amount paid (₹)</label><input id="payAmount" type="number" min="0" step="100" placeholder="e.g. 3000" />
+    <p class="hint">Overpayment is stored as advance and auto-applied to future cycles (FR-11a).</p>
+    <div class="row" style="margin-top:14px">
+      <button class="btn ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn right" onclick="submitPay(${h.id})">Save payment</button></div>`;
+}
+
+function lookupModal(m){
+  const h=m.h;
+  if(!h){ return `<h3>House No. lookup</h3>
+      <p class="sub">Treasurer quick-view of a unit's last payment (FR-17a)</p>
+      <label>House number</label>
+      <input id="lookupHouse" list="houses" placeholder="e.g. A-101" />
+      <datalist id="houses">${state.households.map(x=>`<option value="${x.house}">`).join('')}</datalist>
+      ${m.error?`<p class="hint" style="color:var(--red)">No unit found for that house number.</p>`:''}
+      <div class="row" style="margin-top:14px">
+        <button class="btn ghost" onclick="closeModal()">Cancel</button>
+        <button class="btn right" onclick="submitLookup()">Look up</button></div>`;
+  }
+  const s=statusOf(h);
+  const period=h.plan==='Monthly'?'last month':h.plan==='Quarterly'?'last quarter':'last year';
+  return `<h3>${esc(h.house)} — last payment summary</h3>
+    <p class="sub">${esc(h.name)} · ${h.plan} plan · showing ${period} relative to plan</p>
+    <div class="kv"><span>Last paid date</span><b>${h.lastPaid}</b></div>
+    <div class="kv"><span>Amount due / cycle</span><b>${money(h.amount)}</b></div>
+    <div class="kv"><span>Balance</span><b>${money(s.balance)}</b></div>
+    <div class="kv"><span>Advance / credit</span><b>${money(h.advance)}</b></div>
+    <div class="kv"><span>Status</span><span class="badge ${s.status.toLowerCase()}">${s.status}</span></div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn ghost" onclick="openLookup()">← Another</button>
+      <button class="btn right" onclick="closeModal()">Close</button></div>`;
+}
+
+function expenseModal(){
+  return `<h3>Add expense</h3>
+    <p class="sub">Record society expenditure (Treasurer only).</p>
+    <label>Date</label><input id="exDate" type="date" value="2026-05-27" />
+    <label>Category</label><input id="exCat" list="excats" placeholder="e.g. Electricity" />
+    <datalist id="excats"><option>Security</option><option>Electricity</option><option>Housekeeping</option>
+      <option>Plumbing</option><option>Gardening</option><option>Repairs</option><option>Water</option></datalist>
+    <label>Description</label><input id="exDesc" placeholder="What was it for?" />
+    <label>Amount (₹)</label><input id="exAmt" type="number" min="0" step="100" placeholder="e.g. 5000" />
+    <div class="row" style="margin-top:14px">
+      <button class="btn ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn right" onclick="submitExpense()">Save expense</button></div>`;
+}
+
+function complaintModal(){
+  return `<h3>Post a complaint</h3>
+    <p class="sub">Posting as ${esc(state.user.name)} (${state.user.role}) · post date auto-set</p>
+    <label>Title</label><input id="cTitle" placeholder="Short summary" />
+    <label>Description</label><textarea id="cDesc" placeholder="Describe the issue…"></textarea>
+    ${imageUploader()}
+    <div class="row" style="margin-top:14px">
+      <button class="btn ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn right" onclick="submitComplaint()">Post complaint</button></div>`;
+}
+
+/* ============================================================ Actions */
+function setLanding(v){ state.landing=v; state.draftImages=[]; render(); }
+
+function fillCreds(email){
+  const u=USERS.find(x=>x.email===email);
+  state.landing='signin'; render();
+  if(u){ const e=$('#liEmail'), p=$('#liPass'); if(e)e.value=u.email; if(p)p.value=u.password; }
+}
+function doSignin(){
+  const email=($('#liEmail').value||'').trim().toLowerCase();
+  const pass=$('#liPass').value||'';
+  const u=USERS.find(x=>x.email===email);
+  if(!u || u.password!==pass){
+    const err=$('#liErr'); if(err) err.textContent='Invalid email or password.';
+    return;
+  }
+  state.user={role:u.role, name:u.name, house:u.house||null};
+  state.tab='householders'; state.draftImages=[];
+  if(u.role==='Householder'){
+    const h=state.households.find(x=>x.house===u.house);
+    if(h && statusOf(h).status==='Pending') state.modal={type:'due', h};
+  }
+  render();
+}
+function logout(){ state.user=null; state.modal=null; state.landing='home'; state.draftImages=[]; render(); }
+function go(tab){ state.tab=tab; render(); }
+function closeModal(){ if(state.modal && state.modal.type==='complaint') state.draftImages=[]; state.modal=null; render(); }
+
+function submitSignup(){
+  const name=($('#suName').value||'').trim();
+  if(!name){ $('#suName').focus(); return; }
+  state.modal=null;
+  state.landing='signin';
+  render();
+  // surface a confirmation at the top of sign-in
+  const card=$('.card.narrow');
+  if(card) card.insertAdjacentHTML('afterbegin',
+    `<div class="ok" style="margin-bottom:12px">✅ Account request for <b>${esc(name)}</b> submitted. The Treasurer will approve it (FR-4a). For the demo, just pick a role below.</div>`);
+}
+
+function openPay(id){ state.modal={type:'pay', id}; render(); }
+function submitPay(id){
+  const amt=parseFloat($('#payAmount').value);
+  if(!(amt>0)){ $('#payAmount').focus(); return; }
+  const date=$('#payDate').value || TODAY_STR;
+  const h=state.households.find(x=>x.id===id);
+  const result=recordPayment(h,amt,date);
+  state.payments.unshift({ id:state.nextPaymentRecId++, house:h.house, date, amount:amt, cycle:currentCycle(h.plan) });
+  state.modal={type:'pay', id, amount:amt, date, result, payId:state.nextPayId++};
+  render();
+}
+
+function openLookup(){ state.modal={type:'lookup', h:null}; render(); }
+function submitLookup(){
+  const v=($('#lookupHouse').value||'').trim().toUpperCase();
+  const h=state.households.find(x=>x.house.toUpperCase()===v);
+  state.modal = h?{type:'lookup', h}:{type:'lookup', h:null, error:true};
+  render();
+}
+
+function openComplaint(){ state.draftImages=[]; state.modal={type:'complaint'}; render(); }
+function openImage(src){ state.modal={type:'image', src}; render(); }
+
+function openExpense(){ if(state.user.role!=='Treasurer') return; state.modal={type:'expense'}; render(); }
+function submitExpense(){
+  if(state.user.role!=='Treasurer') return; // only the Treasurer records expenses (BR-2)
+  const date=$('#exDate').value || TODAY_STR;
+  const cat=($('#exCat').value||'').trim();
+  const desc=($('#exDesc').value||'').trim();
+  const amt=parseFloat($('#exAmt').value);
+  if(!cat){ $('#exCat').focus(); return; }
+  if(!(amt>0)){ $('#exAmt').focus(); return; }
+  state.expenses.unshift({ id:state.nextExpenseId++, date, category:cat, desc, amount:amt });
+  state.modal=null; render();
+}
+
+/* Raising a complaint requires authentication; any logged-in role may post (FR-18). */
+function submitComplaint(){
+  if(!state.user) return; // gated to authenticated users
+  const title=($('#cTitle').value||'').trim();
+  const desc=($('#cDesc').value||'').trim();
+  if(!title){ $('#cTitle').focus(); return; }
+  state.complaints.unshift({
+    id:state.nextComplaintId++, author:state.user.role, authorName:state.user.name, title, desc,
+    post:TODAY_STR, resolved:null, images: state.draftImages.map(i=>i.dataUrl)
+  });
+  state.draftImages=[];
+  state.modal=null; state.tab='complaints'; render();
+}
+function resolveComplaint(id){ const c=state.complaints.find(x=>x.id===id); if(c) c.resolved=TODAY_STR; render(); }
+
+render();
+</script>
+</body>
+</html>

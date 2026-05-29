@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <rect width="200" height="200" fill="#0B1426"/>
+  <g fill="#C9A961">
+    <path d="M85 38 L88 48 L98 48 L91 55 L94 65 L85 59 L76 65 L79 55 L72 48 L82 48 Z"/>
+    <path d="M115 38 L118 48 L128 48 L121 55 L124 65 L115 59 L106 65 L109 55 L102 48 L112 48 Z"/>
+    <path d="M100 28 L103 38 L113 38 L106 45 L109 55 L100 49 L91 55 L94 45 L87 38 L97 38 Z"/>
+    <rect x="65" y="68" width="70" height="6"/>
+    <path d="M95 80 C 72 80, 60 105, 70 130 C 78 150, 95 156, 105 152 L 105 142 C 98 144, 88 140, 82 128 C 76 110, 85 92, 102 92 L 102 80 Z"/>
+    <path d="M108 80 L108 152 L122 152 L122 80 Z M108 110 L125 110 L125 118 L108 118 Z M108 80 L132 80 L132 88 L108 88 Z M108 144 L132 144 L132 152 L108 152 Z"/>
+  </g>
+  <g font-family="Cinzel, serif" fill="#C9A961" text-anchor="middle">
+    <text x="100" y="178" font-size="14" font-weight="700" letter-spacing="2.5">CARDMASTER</text>
+    <text x="100" y="192" font-size="8" font-weight="500" letter-spacing="3">ENCLAVE</text>
+  </g>
+</svg>
