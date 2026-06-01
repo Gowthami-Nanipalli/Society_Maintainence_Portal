@@ -43,7 +43,7 @@ const ITEMS: Item[] = [
     tag: "Villas",
   },
   {
-    url: "https://images.unsplash.com/photo-1502780402662-acc01917738e?auto=format&fit=crop&w=1400&q=80",
+    url: "https://images.unsplash.com/photo-1585320806297-9794b3e4eeae?auto=format&fit=crop&w=1400&q=80",
     title: "Manicured Lawns",
     tag: "Gardens",
   },
