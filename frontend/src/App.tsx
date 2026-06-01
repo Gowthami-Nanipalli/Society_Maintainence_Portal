@@ -3,7 +3,8 @@ import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Signup from "./pages/Signup";
 import ForgotPassword from "./pages/ForgotPassword";
-import Dashboard from "./pages/Dashboard";
+import MaintenanceDashboard from "./pages/MaintenanceDashboard";
+import ExpenditureDashboard from "./pages/ExpenditureDashboard";
 
 export default function App() {
   return (
@@ -12,7 +13,9 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
-      <Route path="/dashboard" element={<Dashboard />} />
+      <Route path="/dashboard" element={<Navigate to="/dashboard/maintenance" replace />} />
+      <Route path="/dashboard/maintenance" element={<MaintenanceDashboard />} />
+      <Route path="/dashboard/expenditure" element={<ExpenditureDashboard />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

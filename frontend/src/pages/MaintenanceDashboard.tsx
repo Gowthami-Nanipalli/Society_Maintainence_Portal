@@ -1,22 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
-  AppBar,
-  Avatar,
   Box,
   Button,
   Chip,
-  Container,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
-  IconButton,
-  ListItemIcon,
-  ListItemText,
-  Menu,
-  MenuItem,
   Paper,
   Stack,
   Table,
@@ -26,15 +17,11 @@ import {
   TableHead,
   TableRow,
   TextField,
-  Toolbar,
   Typography,
 } from "@mui/material";
-import LogoutIcon from "@mui/icons-material/Logout";
 import PaymentIcon from "@mui/icons-material/Payment";
-import PersonIcon from "@mui/icons-material/Person";
-import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
-import { Navigate, useNavigate } from "react-router-dom";
-import Logo from "../components/Logo";
+import { Navigate } from "react-router-dom";
+import DashboardShell from "../components/DashboardShell";
 import { palette } from "../theme";
 import {
   getAccounts,
@@ -42,11 +29,7 @@ import {
   updateAccount,
   type Account,
 } from "../lib/accounts";
-import {
-  clearCurrentUser,
-  getCurrentUser,
-  updateCurrentUser,
-} from "../lib/session";
+import { getCurrentUser, updateCurrentUser } from "../lib/session";
 
 const TREASURER_ROLE = "Treasurer";
 
@@ -75,17 +58,7 @@ function statusOf(a: Account): "Cleared" | "Pending" {
   return a.amountDue === 0 ? "Cleared" : "Pending";
 }
 
-function initialsOf(name: string) {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((p) => p[0]?.toUpperCase() ?? "")
-    .join("");
-}
-
-export default function Dashboard() {
-  const navigate = useNavigate();
+export default function MaintenanceDashboard() {
   const user = getCurrentUser();
   const [accounts, setAccounts] = useState<Account[]>(() => getAccounts());
   const [payingFor, setPayingFor] = useState<Account | null>(null);
@@ -93,7 +66,6 @@ export default function Dashboard() {
   const [payDate, setPayDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [payError, setPayError] = useState<string | null>(null);
 
-  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [showMyPayments, setShowMyPayments] = useState(false);
   const [showMyProfile, setShowMyProfile] = useState(false);
   const [profileForm, setProfileForm] = useState({ name: "", mobile: "", house: "" });
@@ -101,7 +73,7 @@ export default function Dashboard() {
   const [profileSaved, setProfileSaved] = useState(false);
 
   useEffect(() => {
-    document.title = "Dashboard · CardMaster Enclave";
+    document.title = "Maintenance · CardMaster Enclave";
   }, []);
 
   const sortedAccounts = useMemo(
@@ -112,8 +84,14 @@ export default function Dashboard() {
   const totals = useMemo(() => {
     const due = accounts.reduce((s, a) => s + a.amountDue, 0);
     const cleared = accounts.filter((a) => statusOf(a) === "Cleared").length;
-    return { due, cleared, total: accounts.length };
+    const collected = accounts.reduce((s, a) => s + a.lastPaidAmount, 0);
+    return { due, cleared, total: accounts.length, collected };
   }, [accounts]);
+
+  const myAccount = useMemo(
+    () => accounts.find((a) => a.email.toLowerCase() === user?.email.toLowerCase()) ?? null,
+    [accounts, user]
+  );
 
   if (!user) {
     return <Navigate to="/login" replace />;
@@ -121,26 +99,8 @@ export default function Dashboard() {
 
   const isTreasurer = user.role === TREASURER_ROLE;
 
-  const handleLogout = () => {
-    clearCurrentUser();
-    navigate("/login");
-  };
-
-  const myAccount = useMemo(
-    () => accounts.find((a) => a.email.toLowerCase() === user?.email.toLowerCase()) ?? null,
-    [accounts, user]
-  );
-
-  const openMenu = (e: React.MouseEvent<HTMLElement>) => setMenuAnchor(e.currentTarget);
-  const closeMenu = () => setMenuAnchor(null);
-
-  const openMyPayments = () => {
-    closeMenu();
-    setShowMyPayments(true);
-  };
-
+  const openMyPayments = () => setShowMyPayments(true);
   const openMyProfile = () => {
-    closeMenu();
     if (myAccount) {
       setProfileForm({
         name: myAccount.name,
@@ -171,7 +131,11 @@ export default function Dashboard() {
       );
       return;
     }
-    updateCurrentUser({ name: result.account.name, mobile: result.account.mobile, house: result.account.house });
+    updateCurrentUser({
+      name: result.account.name,
+      mobile: result.account.mobile,
+      house: result.account.house,
+    });
     setAccounts(getAccounts());
     setProfileError(null);
     setProfileSaved(true);
@@ -212,219 +176,130 @@ export default function Dashboard() {
   };
 
   return (
-    <Box sx={{ minHeight: "100vh", background: palette.cream }}>
-      <AppBar position="static" color="default" sx={{ background: "#fff", borderBottom: `1px solid ${palette.border}` }}>
-        <Toolbar sx={{ gap: 2 }}>
-          <Logo variant="light" size={32} />
-          <Box sx={{ flexGrow: 1 }} />
-          <Stack direction="row" alignItems="center" spacing={1.5}>
-            <Box sx={{ textAlign: "right", display: { xs: "none", sm: "block" } }}>
-              <Typography sx={{ fontSize: 13, fontWeight: 700, color: palette.ink }}>
-                {user.name}
-              </Typography>
-              <Typography sx={{ fontSize: 11, color: palette.muted, letterSpacing: "0.12em" }}>
-                {user.role.toUpperCase()} · {user.house || "—"}
-              </Typography>
-            </Box>
-            <IconButton
-              onClick={openMenu}
-              size="small"
-              aria-label="Open profile menu"
-              sx={{ p: 0.5 }}
-            >
-              <Avatar
-                sx={{
-                  width: 40,
-                  height: 40,
-                  background: palette.ink,
-                  color: palette.gold,
-                  fontSize: 14,
-                  fontWeight: 700,
-                  letterSpacing: "0.04em",
-                  border: `2px solid ${palette.gold}`,
-                }}
-              >
-                {initialsOf(user.name) || <PersonIcon fontSize="small" />}
-              </Avatar>
-            </IconButton>
-            <Menu
-              anchorEl={menuAnchor}
-              open={!!menuAnchor}
-              onClose={closeMenu}
-              anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-              transformOrigin={{ vertical: "top", horizontal: "right" }}
-              PaperProps={{
-                sx: {
-                  mt: 1,
-                  minWidth: 220,
-                  border: `1px solid ${palette.border}`,
-                  borderRadius: 0,
-                },
-              }}
-            >
-              <Box sx={{ px: 2, py: 1.5 }}>
-                <Typography sx={{ fontSize: 13, fontWeight: 700, color: palette.ink }}>
-                  {user.name}
-                </Typography>
-                <Typography sx={{ fontSize: 11, color: palette.muted, letterSpacing: "0.1em" }}>
-                  {user.role.toUpperCase()} · {user.house || "—"}
-                </Typography>
-              </Box>
-              <Divider />
-              <MenuItem onClick={openMyPayments}>
-                <ListItemIcon>
-                  <ReceiptLongIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText primaryTypographyProps={{ fontSize: 14 }}>
-                  My Payments
-                </ListItemText>
-              </MenuItem>
-              <MenuItem onClick={openMyProfile}>
-                <ListItemIcon>
-                  <PersonIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText primaryTypographyProps={{ fontSize: 14 }}>
-                  My Profile
-                </ListItemText>
-              </MenuItem>
-              <Divider />
-              <MenuItem onClick={handleLogout}>
-                <ListItemIcon>
-                  <LogoutIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText primaryTypographyProps={{ fontSize: 14 }}>
-                  Log out
-                </ListItemText>
-              </MenuItem>
-            </Menu>
-          </Stack>
-        </Toolbar>
-      </AppBar>
-
-      <Container maxWidth="lg" sx={{ py: { xs: 3, md: 5 } }}>
-        <Stack spacing={0.5} sx={{ mb: 3 }}>
-          <Typography
-            sx={{
-              fontSize: 11,
-              fontWeight: 700,
-              color: palette.gold,
-              letterSpacing: "0.32em",
-            }}
-          >
-            MAINTENANCE DASHBOARD
-          </Typography>
-          <Typography variant="h4" sx={{ fontSize: { xs: 26, md: 32 } }}>
-            Society Maintenance Bills
-          </Typography>
-          <Typography sx={{ color: palette.muted, fontSize: 14 }}>
-            Every member's current cycle dues, last payment and status — at a glance.
-          </Typography>
-        </Stack>
-
-        <Stack
-          direction={{ xs: "column", sm: "row" }}
-          spacing={2}
-          sx={{ mb: 3 }}
+    <DashboardShell user={user} onOpenMyPayments={openMyPayments} onOpenMyProfile={openMyProfile}>
+      <Stack spacing={0.5} sx={{ mb: 3 }}>
+        <Typography
+          sx={{
+            fontSize: 11,
+            fontWeight: 700,
+            color: palette.gold,
+            letterSpacing: "0.32em",
+          }}
         >
-          <StatTile label="Total Members" value={String(totals.total)} accent={palette.ink} />
-          <StatTile label="Cleared This Cycle" value={`${totals.cleared} / ${totals.total}`} accent="#2e7d32" />
-          <StatTile label="Outstanding Dues" value={formatINR(totals.due)} accent="#c62828" />
-        </Stack>
+          MAINTENANCE DASHBOARD
+        </Typography>
+        <Typography variant="h4" sx={{ fontSize: { xs: 26, md: 32 } }}>
+          Society Maintenance Bills
+        </Typography>
+        <Typography sx={{ color: palette.muted, fontSize: 14 }}>
+          Every member's current cycle dues, last payment and status — at a glance.
+        </Typography>
+      </Stack>
 
-        <Paper
-          elevation={0}
-          sx={{ border: `1px solid ${palette.border}`, overflow: "hidden" }}
-        >
-          <TableContainer>
-            <Table size="medium">
-              <TableHead sx={{ background: palette.cream }}>
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 3 }}>
+        <StatTile label="Total Members" value={String(totals.total)} accent={palette.ink} />
+        <StatTile
+          label="Cleared This Cycle"
+          value={`${totals.cleared} / ${totals.total}`}
+          accent="#2e7d32"
+        />
+        <StatTile label="Maintenance Collected" value={formatINR(totals.collected)} accent={palette.gold} />
+        <StatTile label="Outstanding Dues" value={formatINR(totals.due)} accent="#c62828" />
+      </Stack>
+
+      <Paper
+        elevation={0}
+        sx={{ border: `1px solid ${palette.border}`, overflow: "hidden" }}
+      >
+        <TableContainer>
+          <Table size="medium">
+            <TableHead sx={{ background: palette.cream }}>
+              <TableRow>
+                <HeaderCell>Villa No.</HeaderCell>
+                <HeaderCell>Member Name</HeaderCell>
+                <HeaderCell>Contact</HeaderCell>
+                <HeaderCell align="right">Amount Due</HeaderCell>
+                <HeaderCell align="right">Last Paid Amount</HeaderCell>
+                <HeaderCell>Last Paid On</HeaderCell>
+                <HeaderCell>Payment Status</HeaderCell>
+                {isTreasurer && <HeaderCell align="right">Action</HeaderCell>}
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {sortedAccounts.length === 0 ? (
                 <TableRow>
-                  <HeaderCell>Villa No.</HeaderCell>
-                  <HeaderCell>Member Name</HeaderCell>
-                  <HeaderCell>Contact</HeaderCell>
-                  <HeaderCell align="right">Amount Due</HeaderCell>
-                  <HeaderCell align="right">Last Paid Amount</HeaderCell>
-                  <HeaderCell>Last Paid On</HeaderCell>
-                  <HeaderCell>Payment Status</HeaderCell>
-                  {isTreasurer && <HeaderCell align="right">Action</HeaderCell>}
+                  <TableCell
+                    colSpan={isTreasurer ? 8 : 7}
+                    sx={{ textAlign: "center", py: 5, color: palette.muted }}
+                  >
+                    No members registered yet.
+                  </TableCell>
                 </TableRow>
-              </TableHead>
-              <TableBody>
-                {sortedAccounts.length === 0 ? (
-                  <TableRow>
-                    <TableCell
-                      colSpan={isTreasurer ? 8 : 7}
-                      sx={{ textAlign: "center", py: 5, color: palette.muted }}
-                    >
-                      No members registered yet.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  sortedAccounts.map((a) => {
-                    const status = statusOf(a);
-                    return (
-                      <TableRow key={a.email} hover>
-                        <TableCell sx={{ fontWeight: 700 }}>{a.house || "—"}</TableCell>
-                        <TableCell>{a.name}</TableCell>
-                        <TableCell sx={{ color: palette.muted }}>{a.mobile}</TableCell>
-                        <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>
-                          {a.amountDue > 0 ? formatINR(a.amountDue) : "—"}
-                        </TableCell>
-                        <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>
-                          {a.lastPaidAmount > 0 ? formatINR(a.lastPaidAmount) : "—"}
-                        </TableCell>
-                        <TableCell sx={{ color: palette.muted }}>
-                          {formatDate(a.lastPaidOn)}
-                        </TableCell>
-                        <TableCell>
-                          <Chip
-                            label={status}
+              ) : (
+                sortedAccounts.map((a) => {
+                  const status = statusOf(a);
+                  return (
+                    <TableRow key={a.email} hover>
+                      <TableCell sx={{ fontWeight: 700 }}>{a.house || "—"}</TableCell>
+                      <TableCell>{a.name}</TableCell>
+                      <TableCell sx={{ color: palette.muted }}>{a.mobile}</TableCell>
+                      <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>
+                        {a.amountDue > 0 ? formatINR(a.amountDue) : "—"}
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>
+                        {a.lastPaidAmount > 0 ? formatINR(a.lastPaidAmount) : "—"}
+                      </TableCell>
+                      <TableCell sx={{ color: palette.muted }}>
+                        {formatDate(a.lastPaidOn)}
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          label={status}
+                          size="small"
+                          sx={{
+                            fontWeight: 700,
+                            letterSpacing: "0.08em",
+                            fontSize: 11,
+                            background: status === "Cleared" ? "#e6f4ea" : "#fdecea",
+                            color: status === "Cleared" ? "#2e7d32" : "#c62828",
+                            borderRadius: 0,
+                          }}
+                        />
+                      </TableCell>
+                      {isTreasurer && (
+                        <TableCell align="right">
+                          <Button
                             size="small"
+                            variant="contained"
+                            color="primary"
+                            startIcon={<PaymentIcon sx={{ fontSize: 16 }} />}
+                            disabled={a.amountDue === 0}
+                            onClick={() => openPaymentDialog(a)}
                             sx={{
-                              fontWeight: 700,
-                              letterSpacing: "0.08em",
+                              letterSpacing: "0.1em",
+                              textTransform: "uppercase",
                               fontSize: 11,
-                              background: status === "Cleared" ? "#e6f4ea" : "#fdecea",
-                              color: status === "Cleared" ? "#2e7d32" : "#c62828",
-                              borderRadius: 0,
+                              py: 0.6,
                             }}
-                          />
+                          >
+                            Record
+                          </Button>
                         </TableCell>
-                        {isTreasurer && (
-                          <TableCell align="right">
-                            <Button
-                              size="small"
-                              variant="contained"
-                              color="primary"
-                              startIcon={<PaymentIcon sx={{ fontSize: 16 }} />}
-                              disabled={a.amountDue === 0}
-                              onClick={() => openPaymentDialog(a)}
-                              sx={{
-                                letterSpacing: "0.1em",
-                                textTransform: "uppercase",
-                                fontSize: 11,
-                                py: 0.6,
-                              }}
-                            >
-                              Record
-                            </Button>
-                          </TableCell>
-                        )}
-                      </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </Paper>
+                      )}
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Paper>
 
-        {!isTreasurer && (
-          <Typography sx={{ mt: 2, fontSize: 12, color: palette.muted, fontStyle: "italic" }}>
-            Only the Treasurer can record payments. Contact the community office to update your dues.
-          </Typography>
-        )}
-      </Container>
+      {!isTreasurer && (
+        <Typography sx={{ mt: 2, fontSize: 12, color: palette.muted, fontStyle: "italic" }}>
+          Only the Treasurer can record payments. Contact the community office to update your dues.
+        </Typography>
+      )}
 
       <Dialog open={!!payingFor} onClose={closePaymentDialog} maxWidth="xs" fullWidth>
         <DialogTitle sx={{ fontFamily: '"Cinzel", serif', fontSize: 18 }}>
@@ -630,7 +505,7 @@ export default function Dashboard() {
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
+    </DashboardShell>
   );
 }
 
