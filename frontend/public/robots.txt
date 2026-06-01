@@ -1,0 +1,15 @@
+# CardMaster Enclave — robots policy
+# Public landing page is indexable; resident-only routes are not.
+
+User-agent: *
+Allow: /$
+Allow: /index.html
+
+Disallow: /login
+Disallow: /signup
+Disallow: /forgot-password
+Disallow: /dashboard
+Disallow: /dashboard/
+
+# TODO after deploy: replace with your real domain
+# Sitemap: https://your-site.vercel.app/sitemap.xml
