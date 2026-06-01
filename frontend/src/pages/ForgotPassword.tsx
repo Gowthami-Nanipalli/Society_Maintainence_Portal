@@ -1,6 +1,5 @@
 import { useState } from "react";
 import {
-  Alert,
   Box,
   Button,
   Container,
@@ -15,25 +14,22 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { Link as RouterLink } from "react-router-dom";
 import Logo from "../components/Logo";
 import { palette } from "../theme";
+import { validateLoginIdentifier } from "../lib/validators";
 
 export default function ForgotPassword() {
   const [identifier, setIdentifier] = useState("");
+  const [touched, setTouched] = useState(false);
+  const [submitAttempted, setSubmitAttempted] = useState(false);
   const [sent, setSent] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+
+  const identifierError = validateLoginIdentifier(identifier);
+  const showIdentifierError = (touched || submitAttempted) && identifierError;
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
+    setSubmitAttempted(true);
 
-    const raw = identifier.trim();
-    const isEmail = /^\S+@\S+\.\S+$/.test(raw);
-    const digits = raw.replace(/\D/g, "");
-    const isMobile = digits.length >= 10;
-
-    if (!isEmail && !isMobile) {
-      setError("Enter the email address or mobile number linked to your resident account.");
-      return;
-    }
+    if (identifierError) return;
     setSent(true);
   };
 
@@ -174,7 +170,7 @@ export default function ForgotPassword() {
                 </Typography>
               </Stack>
 
-              <Box component="form" onSubmit={submit}>
+              <Box component="form" onSubmit={submit} noValidate>
                 <Stack spacing={2}>
                   <TextField
                     label="Email or mobile number"
@@ -182,14 +178,11 @@ export default function ForgotPassword() {
                     required
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
+                    onBlur={() => setTouched(true)}
                     autoFocus
+                    error={Boolean(showIdentifierError)}
+                    helperText={showIdentifierError || " "}
                   />
-
-                  {error && (
-                    <Alert severity="error" sx={{ borderRadius: 0 }}>
-                      {error}
-                    </Alert>
-                  )}
 
                   <Button
                     type="submit"

@@ -20,6 +20,15 @@ import { Link as RouterLink } from "react-router-dom";
 import Logo from "../components/Logo";
 import { palette } from "../theme";
 import { addAccount } from "../lib/accounts";
+import {
+  digitsOnly,
+  validateConfirmPassword,
+  validateEmail,
+  validateHouse,
+  validateMobile,
+  validateName,
+  validatePassword,
+} from "../lib/validators";
 
 const ROLES = [
   {
@@ -40,6 +49,8 @@ const ROLES = [
   },
 ];
 
+type FormField = "name" | "email" | "mobile" | "house" | "password" | "confirm";
+
 export default function Signup() {
   const [form, setForm] = useState({
     name: "",
@@ -50,6 +61,15 @@ export default function Signup() {
     password: "",
     confirm: "",
   });
+  const [touched, setTouched] = useState<Record<FormField, boolean>>({
+    name: false,
+    email: false,
+    mobile: false,
+    house: false,
+    password: false,
+    confirm: false,
+  });
+  const [submitAttempted, setSubmitAttempted] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
@@ -57,32 +77,34 @@ export default function Signup() {
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
+  const markTouched = (k: FormField) => () =>
+    setTouched((t) => (t[k] ? t : { ...t, [k]: true }));
+
+  const errors: Record<FormField, string | null> = {
+    name: validateName(form.name),
+    email: validateEmail(form.email),
+    mobile: validateMobile(form.mobile),
+    house: validateHouse(form.house),
+    password: validatePassword(form.password),
+    confirm: validateConfirmPassword(form.password, form.confirm),
+  };
+
+  const fieldErr = (k: FormField): string | null =>
+    (touched[k] || submitAttempted) ? errors[k] : null;
+
+  const hasErrors = Object.values(errors).some(Boolean);
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSubmitAttempted(true);
 
-    if (!/^\S+@\S+\.\S+$/.test(form.email)) {
-      setError("Please enter a valid email address.");
-      return;
-    }
-    const mobileDigits = form.mobile.replace(/\D/g, "");
-    if (mobileDigits.length < 10) {
-      setError("Please enter a valid 10-digit mobile number.");
-      return;
-    }
-    if (form.password.length < 6) {
-      setError("Password must be at least 6 characters.");
-      return;
-    }
-    if (form.password !== form.confirm) {
-      setError("Passwords don't match.");
-      return;
-    }
+    if (hasErrors) return;
 
     const result = addAccount({
       name: form.name.trim(),
       email: form.email.trim(),
-      mobile: mobileDigits,
+      mobile: digitsOnly(form.mobile),
       house: form.house.trim(),
       role: form.role,
       password: form.password,
@@ -181,7 +203,7 @@ export default function Signup() {
                 Sign up to access the maintenance portal at CardMaster Enclave.
               </Typography>
 
-              <Box component="form" onSubmit={submit}>
+              <Box component="form" onSubmit={submit} noValidate>
                 <Stack spacing={2}>
                   <TextField
                     label="Full name"
@@ -189,6 +211,9 @@ export default function Signup() {
                     required
                     value={form.name}
                     onChange={set("name")}
+                    onBlur={markTouched("name")}
+                    error={Boolean(fieldErr("name"))}
+                    helperText={fieldErr("name") ?? " "}
                   />
                   <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
                     <TextField
@@ -198,6 +223,9 @@ export default function Signup() {
                       required
                       value={form.email}
                       onChange={set("email")}
+                      onBlur={markTouched("email")}
+                      error={Boolean(fieldErr("email"))}
+                      helperText={fieldErr("email") ?? " "}
                     />
                     <TextField
                       label="Mobile number"
@@ -205,6 +233,10 @@ export default function Signup() {
                       required
                       value={form.mobile}
                       onChange={set("mobile")}
+                      onBlur={markTouched("mobile")}
+                      error={Boolean(fieldErr("mobile"))}
+                      helperText={fieldErr("mobile") ?? "10-digit Indian mobile number."}
+                      inputProps={{ inputMode: "numeric", maxLength: 10 }}
                       InputProps={{
                         startAdornment: (
                           <InputAdornment position="start">
@@ -222,6 +254,9 @@ export default function Signup() {
                       required
                       value={form.house}
                       onChange={set("house")}
+                      onBlur={markTouched("house")}
+                      error={Boolean(fieldErr("house"))}
+                      helperText={fieldErr("house") ?? " "}
                     />
                     <TextField
                       select
@@ -230,7 +265,7 @@ export default function Signup() {
                       value={form.role}
                       onChange={set("role")}
                       helperText={
-                        ROLES.find((r) => r.value === form.role)?.desc ?? ""
+                        ROLES.find((r) => r.value === form.role)?.desc ?? " "
                       }
                     >
                       {ROLES.map((r) => (
@@ -247,7 +282,9 @@ export default function Signup() {
                     required
                     value={form.password}
                     onChange={set("password")}
-                    helperText="At least 6 characters."
+                    onBlur={markTouched("password")}
+                    error={Boolean(fieldErr("password"))}
+                    helperText={fieldErr("password") ?? "At least 6 characters, no spaces."}
                     InputProps={{
                       endAdornment: (
                         <InputAdornment position="end">
@@ -269,6 +306,9 @@ export default function Signup() {
                     required
                     value={form.confirm}
                     onChange={set("confirm")}
+                    onBlur={markTouched("confirm")}
+                    error={Boolean(fieldErr("confirm"))}
+                    helperText={fieldErr("confirm") ?? " "}
                   />
 
                   {error && (

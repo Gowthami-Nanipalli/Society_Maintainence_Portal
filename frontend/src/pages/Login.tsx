@@ -21,6 +21,7 @@ import Logo from "../components/Logo";
 import { palette } from "../theme";
 import { findAccount } from "../lib/accounts";
 import { setCurrentUser } from "../lib/session";
+import { validateLoginIdentifier } from "../lib/validators";
 
 const HERO_SLIDES = [
   "https://images.unsplash.com/photo-1613490493576-7fde63acd811?auto=format&fit=crop&w=1400&q=80",
@@ -32,6 +33,8 @@ export default function Login() {
   const navigate = useNavigate();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [touched, setTouched] = useState({ identifier: false, password: false });
+  const [submitAttempted, setSubmitAttempted] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [slide, setSlide] = useState(0);
@@ -41,11 +44,21 @@ export default function Login() {
     return () => clearInterval(t);
   }, []);
 
-  const canSubmit = identifier.trim().length > 0 && password.length >= 6;
+  const identifierError = validateLoginIdentifier(identifier);
+  const passwordError = !password ? "Please enter your password." : null;
+  const hasErrors = Boolean(identifierError || passwordError);
+
+  const showIdentifierError =
+    (touched.identifier || submitAttempted) && identifierError;
+  const showPasswordError =
+    (touched.password || submitAttempted) && passwordError;
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setSubmitAttempted(true);
+
+    if (hasErrors) return;
 
     const match = findAccount(identifier, password);
 
@@ -235,7 +248,7 @@ export default function Login() {
               Manage your maintenance dues and community updates.
             </Typography>
 
-            <Box component="form" onSubmit={submit}>
+            <Box component="form" onSubmit={submit} noValidate>
               <Stack spacing={2}>
                 <TextField
                   label="Email or registered mobile number"
@@ -243,8 +256,11 @@ export default function Login() {
                   fullWidth
                   value={identifier}
                   onChange={(e) => setIdentifier(e.target.value)}
+                  onBlur={() => setTouched((t) => ({ ...t, identifier: true }))}
                   autoComplete="username"
                   required
+                  error={Boolean(showIdentifierError)}
+                  helperText={showIdentifierError || " "}
                 />
                 <TextField
                   label="Password"
@@ -253,8 +269,11 @@ export default function Login() {
                   type={showPass ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
+                  onBlur={() => setTouched((t) => ({ ...t, password: true }))}
                   autoComplete="current-password"
                   required
+                  error={Boolean(showPasswordError)}
+                  helperText={showPasswordError || " "}
                   InputProps={{
                     endAdornment: (
                       <InputAdornment position="end">
@@ -282,7 +301,6 @@ export default function Login() {
                   variant="contained"
                   color="primary"
                   size="large"
-                  disabled={!canSubmit}
                   sx={{
                     letterSpacing: "0.16em",
                     textTransform: "uppercase",
