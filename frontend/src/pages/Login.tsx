@@ -19,8 +19,7 @@ import KeyIcon from "@mui/icons-material/Key";
 import { Link as RouterLink, useNavigate } from "react-router-dom";
 import Logo from "../components/Logo";
 import { palette } from "../theme";
-import { findAccount } from "../lib/accounts";
-import { setCurrentUser } from "../lib/session";
+import { login } from "../lib/auth";
 import { validateLoginIdentifier } from "../lib/validators";
 
 const HERO_SLIDES = [
@@ -37,6 +36,7 @@ export default function Login() {
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [slide, setSlide] = useState(0);
 
   useEffect(() => {
@@ -53,29 +53,20 @@ export default function Login() {
   const showPasswordError =
     (touched.password || submitAttempted) && passwordError;
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSubmitAttempted(true);
-
     if (hasErrors) return;
-
-    const match = findAccount(identifier, password);
-
-    if (!match) {
-      setError(
-        "Sorry, your email/mobile number or password is incorrect. Please check and try again."
-      );
-      return;
+    setSubmitting(true);
+    try {
+      await login(identifier.trim(), password);
+      navigate("/dashboard");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not sign in.");
+    } finally {
+      setSubmitting(false);
     }
-    setCurrentUser({
-      name: match.name,
-      email: match.email,
-      mobile: match.mobile,
-      house: match.house,
-      role: match.role,
-    });
-    navigate("/dashboard");
   };
 
   return (
@@ -115,7 +106,6 @@ export default function Login() {
             minHeight: { md: 620 },
           }}
         >
-          {/* ---- Left: rotating brand visual ---- */}
           <Box
             sx={{
               position: "relative",
@@ -191,8 +181,8 @@ export default function Login() {
                   </Box>
                 </Typography>
                 <Typography sx={{ opacity: 0.85, fontSize: 14.5, lineHeight: 1.75, maxWidth: 400 }}>
-                  Track maintenance dues, settle bills, raise complaints with photos, and stay
-                  connected with the community office — all from one secure resident portal.
+                  Track FY maintenance dues, settle bills, manage expenditure and
+                  approve new residents — all backed by a secure PostgreSQL ledger.
                 </Typography>
 
                 <Stack direction="row" spacing={1.2} sx={{ mt: 4 }}>
@@ -214,7 +204,6 @@ export default function Login() {
             </Box>
           </Box>
 
-          {/* ---- Right: login form ---- */}
           <Box
             sx={{
               p: { xs: 3.5, sm: 5, md: 6 },
@@ -301,13 +290,14 @@ export default function Login() {
                   variant="contained"
                   color="primary"
                   size="large"
+                  disabled={submitting}
                   sx={{
                     letterSpacing: "0.16em",
                     textTransform: "uppercase",
                     py: 1.4,
                   }}
                 >
-                  Sign In
+                  {submitting ? "Signing in…" : "Sign In"}
                 </Button>
 
                 <Box sx={{ textAlign: "center" }}>
@@ -356,7 +346,6 @@ export default function Login() {
                 </Box>
               </Typography>
             </Box>
-
           </Box>
         </Paper>
 

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  Alert,
   Box,
   Button,
   Container,
@@ -14,23 +15,34 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { Link as RouterLink } from "react-router-dom";
 import Logo from "../components/Logo";
 import { palette } from "../theme";
+import { forgotPassword } from "../lib/auth";
 import { validateLoginIdentifier } from "../lib/validators";
 
 export default function ForgotPassword() {
   const [identifier, setIdentifier] = useState("");
   const [touched, setTouched] = useState(false);
   const [submitAttempted, setSubmitAttempted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const identifierError = validateLoginIdentifier(identifier);
   const showIdentifierError = (touched || submitAttempted) && identifierError;
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     setSubmitAttempted(true);
-
     if (identifierError) return;
-    setSent(true);
+    setSubmitting(true);
+    try {
+      await forgotPassword(identifier.trim());
+      setSent(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not submit the request.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -93,7 +105,7 @@ export default function ForgotPassword() {
               </Box>
 
               <Typography variant="h5" sx={{ textAlign: "center", mt: 1 }}>
-                Check your inbox
+                Request received
               </Typography>
               <Typography
                 sx={{
@@ -103,8 +115,8 @@ export default function ForgotPassword() {
                   lineHeight: 1.7,
                 }}
               >
-                If an account exists for <b>{identifier}</b>, we've sent password reset
-                instructions. The link will expire in 30 minutes.
+                If an account exists for <b>{identifier}</b>, password reset
+                instructions will be sent shortly. The link will expire in 30 minutes.
               </Typography>
 
               <Stack direction="row" spacing={2} sx={{ mt: 1 }}>
@@ -165,8 +177,8 @@ export default function ForgotPassword() {
                     lineHeight: 1.6,
                   }}
                 >
-                  Enter the email or mobile number linked to your resident account and we'll send
-                  you a link to get back into your account.
+                  Enter the email or mobile number linked to your resident account and we'll
+                  send password reset instructions if an account exists.
                 </Typography>
               </Stack>
 
@@ -184,18 +196,25 @@ export default function ForgotPassword() {
                     helperText={showIdentifierError || " "}
                   />
 
+                  {error && (
+                    <Alert severity="error" sx={{ borderRadius: 0 }}>
+                      {error}
+                    </Alert>
+                  )}
+
                   <Button
                     type="submit"
                     variant="contained"
                     color="primary"
                     size="large"
+                    disabled={submitting}
                     sx={{
                       letterSpacing: "0.16em",
                       textTransform: "uppercase",
                       py: 1.4,
                     }}
                   >
-                    Send Login Link
+                    {submitting ? "Sending…" : "Send Reset Instructions"}
                   </Button>
                 </Stack>
               </Box>

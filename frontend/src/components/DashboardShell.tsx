@@ -17,19 +17,25 @@ import {
 } from "@mui/material";
 import LogoutIcon from "@mui/icons-material/Logout";
 import PaymentsOutlinedIcon from "@mui/icons-material/PaymentsOutlined";
+import PostAddOutlinedIcon from "@mui/icons-material/PostAddOutlined";
 import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
 import PersonIcon from "@mui/icons-material/Person";
+import VerifiedUserIcon from "@mui/icons-material/VerifiedUser";
 import AccountBalanceWalletOutlinedIcon from "@mui/icons-material/AccountBalanceWalletOutlined";
 import { NavLink, useNavigate } from "react-router-dom";
 import Logo from "./Logo";
 import { palette } from "../theme";
-import { clearCurrentUser, type SessionUser } from "../lib/session";
+import { logout } from "../lib/auth";
+import { roleLabel, type AuthUser } from "../lib/types";
 
 type Props = {
-  user: SessionUser;
+  user: AuthUser;
   children: React.ReactNode;
   onOpenMyPayments?: () => void;
   onOpenMyProfile?: () => void;
+  onOpenRecordPayment?: () => void;
+  onOpenAssignMaintenance?: () => void;
+  onLogout?: () => void;
 };
 
 function initialsOf(name: string) {
@@ -46,6 +52,9 @@ export default function DashboardShell({
   children,
   onOpenMyPayments,
   onOpenMyProfile,
+  onOpenRecordPayment,
+  onOpenAssignMaintenance,
+  onLogout,
 }: Props) {
   const navigate = useNavigate();
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
@@ -55,9 +64,15 @@ export default function DashboardShell({
 
   const handleLogout = () => {
     closeMenu();
-    clearCurrentUser();
+    if (onLogout) {
+      onLogout();
+      return;
+    }
+    logout();
     navigate("/login");
   };
+
+  const isSecretary = user.role === "secretary";
 
   return (
     <Box sx={{ minHeight: "100vh", background: palette.cream }}>
@@ -73,9 +88,6 @@ export default function DashboardShell({
             <Box sx={{ textAlign: "right", display: { xs: "none", sm: "block" } }}>
               <Typography sx={{ fontSize: 13, fontWeight: 700, color: palette.ink }}>
                 {user.name}
-              </Typography>
-              <Typography sx={{ fontSize: 11, color: palette.muted, letterSpacing: "0.12em" }}>
-                {user.role.toUpperCase()} · {user.house || "—"}
               </Typography>
             </Box>
             <IconButton
@@ -119,7 +131,10 @@ export default function DashboardShell({
                   {user.name}
                 </Typography>
                 <Typography sx={{ fontSize: 11, color: palette.muted, letterSpacing: "0.1em" }}>
-                  {user.role.toUpperCase()} · {user.house || "—"}
+                  {roleLabel(user.role).toUpperCase()}
+                  {user.house || user.plot_no
+                    ? ` · ${user.house || user.plot_no}`
+                    : ""}
                 </Typography>
               </Box>
               <Divider />
@@ -153,6 +168,36 @@ export default function DashboardShell({
                   </ListItemText>
                 </MenuItem>
               )}
+              {onOpenRecordPayment && user.role === "treasurer" && (
+                <MenuItem
+                  onClick={() => {
+                    closeMenu();
+                    onOpenRecordPayment();
+                  }}
+                >
+                  <ListItemIcon>
+                    <PaymentsOutlinedIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText primaryTypographyProps={{ fontSize: 14 }}>
+                    Record Payment
+                  </ListItemText>
+                </MenuItem>
+              )}
+              {onOpenAssignMaintenance && user.role === "treasurer" && (
+                <MenuItem
+                  onClick={() => {
+                    closeMenu();
+                    onOpenAssignMaintenance();
+                  }}
+                >
+                  <ListItemIcon>
+                    <PostAddOutlinedIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText primaryTypographyProps={{ fontSize: 14 }}>
+                    Assign Maintenance
+                  </ListItemText>
+                </MenuItem>
+              )}
               <Divider />
               <MenuItem onClick={handleLogout}>
                 <ListItemIcon>
@@ -170,12 +215,26 @@ export default function DashboardShell({
       <Box sx={{ background: "#fff", borderBottom: `1px solid ${palette.border}` }}>
         <Container maxWidth="lg">
           <Stack direction="row" spacing={1} sx={{ py: 1.5 }}>
-            <SubNavLink to="/dashboard/maintenance" icon={<PaymentsOutlinedIcon sx={{ fontSize: 18 }} />}>
+            <SubNavLink
+              to="/dashboard/maintenance"
+              icon={<PaymentsOutlinedIcon sx={{ fontSize: 18 }} />}
+            >
               Maintenance
             </SubNavLink>
-            <SubNavLink to="/dashboard/expenditure" icon={<AccountBalanceWalletOutlinedIcon sx={{ fontSize: 18 }} />}>
+            <SubNavLink
+              to="/dashboard/expenditure"
+              icon={<AccountBalanceWalletOutlinedIcon sx={{ fontSize: 18 }} />}
+            >
               Expenditure
             </SubNavLink>
+            {isSecretary && (
+              <SubNavLink
+                to="/dashboard/approvals"
+                icon={<VerifiedUserIcon sx={{ fontSize: 18 }} />}
+              >
+                Approvals
+              </SubNavLink>
+            )}
           </Stack>
         </Container>
       </Box>

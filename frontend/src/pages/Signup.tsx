@@ -6,7 +6,6 @@ import {
   Container,
   IconButton,
   InputAdornment,
-  MenuItem,
   Paper,
   Stack,
   TextField,
@@ -19,7 +18,7 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import { Link as RouterLink } from "react-router-dom";
 import Logo from "../components/Logo";
 import { palette } from "../theme";
-import { addAccount } from "../lib/accounts";
+import { signup } from "../lib/auth";
 import {
   digitsOnly,
   validateConfirmPassword,
@@ -30,25 +29,6 @@ import {
   validatePassword,
 } from "../lib/validators";
 
-const ROLES = [
-  {
-    value: "Community Member",
-    desc: "Standard resident — view dues, pay maintenance, raise complaints.",
-  },
-  {
-    value: "Secretary",
-    desc: "Oversight role — read-only view of all dues, complaints and expenses.",
-  },
-  {
-    value: "President",
-    desc: "Oversight role — read-only view of all dues, complaints and expenses.",
-  },
-  {
-    value: "Treasurer",
-    desc: "Admin role — records payments, manages expenses and plans.",
-  },
-];
-
 type FormField = "name" | "email" | "mobile" | "house" | "password" | "confirm";
 
 export default function Signup() {
@@ -57,7 +37,7 @@ export default function Signup() {
     email: "",
     mobile: "",
     house: "",
-    role: ROLES[0].value,
+    plot_no: "",
     password: "",
     confirm: "",
   });
@@ -72,6 +52,7 @@ export default function Signup() {
   const [submitAttempted, setSubmitAttempted] = useState(false);
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -94,32 +75,27 @@ export default function Signup() {
 
   const hasErrors = Object.values(errors).some(Boolean);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setSubmitAttempted(true);
-
     if (hasErrors) return;
-
-    const result = addAccount({
-      name: form.name.trim(),
-      email: form.email.trim(),
-      mobile: digitsOnly(form.mobile),
-      house: form.house.trim(),
-      role: form.role,
-      password: form.password,
-    });
-
-    if (!result.ok) {
-      setError(
-        result.reason === "email-taken"
-          ? "An account with this email already exists. Please sign in instead."
-          : "An account with this mobile number already exists. Please sign in instead."
-      );
-      return;
+    setSubmitting(true);
+    try {
+      await signup({
+        name: form.name.trim(),
+        email: form.email.trim().toLowerCase(),
+        mobile: digitsOnly(form.mobile),
+        house: form.house.trim(),
+        plot_no: form.plot_no.trim() || null,
+        password: form.password,
+      });
+      setDone(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create the account.");
+    } finally {
+      setSubmitting(false);
     }
-
-    setDone(true);
   };
 
   return (
@@ -163,13 +139,13 @@ export default function Signup() {
           {done ? (
             <Stack alignItems="center" spacing={2} sx={{ py: 3 }}>
               <CheckCircleIcon sx={{ color: palette.gold, fontSize: 56 }} />
-              <Typography variant="h5">Account request submitted</Typography>
+              <Typography variant="h5">Account created</Typography>
               <Typography sx={{ color: palette.muted, textAlign: "center", maxWidth: 480 }}>
-                Thanks <b>{form.name || "resident"}</b>. Your account will be created with the
-                role <b>{form.role}</b> for house{" "}
-                <b>{form.house || "—"}</b>. The community office will verify the details and
-                approve your account within one business day. You'll receive an email at{" "}
-                <b>{form.email}</b> once it's ready.
+                Thanks <b>{form.name || "resident"}</b>. You can sign in now with{" "}
+                <b>read-only</b> access to maintenance and expenditure records. Your
+                account stays in <b>pending</b> state until the Secretary approves it —
+                approval is what gets your plot added to the billing ledger.
+                You will receive an email confirmation at <b>{form.email}</b>.
               </Typography>
               <Stack direction="row" spacing={2} sx={{ mt: 2 }}>
                 <Button
@@ -194,13 +170,16 @@ export default function Signup() {
             </Stack>
           ) : (
             <>
-              <Typography variant="h4" sx={{ textAlign: "center", mb: 0.5, fontSize: { xs: 24, md: 28 } }}>
+              <Typography
+                variant="h4"
+                sx={{ textAlign: "center", mb: 0.5, fontSize: { xs: 24, md: 28 } }}
+              >
                 Create your resident account
               </Typography>
               <Typography
                 sx={{ textAlign: "center", color: palette.muted, fontSize: 14, mb: 4 }}
               >
-                Sign up to access the maintenance portal at CardMaster Enclave.
+                New accounts are reviewed by the Society Secretary before access is granted.
               </Typography>
 
               <Box component="form" onSubmit={submit} noValidate>
@@ -259,21 +238,13 @@ export default function Signup() {
                       helperText={fieldErr("house") ?? " "}
                     />
                     <TextField
-                      select
-                      label="Your role at the society"
+                      label="Plot No. (optional)"
+                      placeholder="e.g. 7 or 8 & 9"
                       fullWidth
-                      value={form.role}
-                      onChange={set("role")}
-                      helperText={
-                        ROLES.find((r) => r.value === form.role)?.desc ?? " "
-                      }
-                    >
-                      {ROLES.map((r) => (
-                        <MenuItem key={r.value} value={r.value}>
-                          {r.value}
-                        </MenuItem>
-                      ))}
-                    </TextField>
+                      value={form.plot_no}
+                      onChange={set("plot_no")}
+                      helperText="Used in the maintenance ledger."
+                    />
                   </Stack>
                   <TextField
                     label="Password"
@@ -322,13 +293,14 @@ export default function Signup() {
                     variant="contained"
                     color="primary"
                     size="large"
+                    disabled={submitting}
                     sx={{
                       letterSpacing: "0.16em",
                       textTransform: "uppercase",
                       py: 1.4,
                     }}
                   >
-                    Create Account
+                    {submitting ? "Submitting…" : "Submit for Approval"}
                   </Button>
                 </Stack>
               </Box>

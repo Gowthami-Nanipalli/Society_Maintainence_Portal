@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Box,
   Button,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -22,88 +23,102 @@ import {
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
-import { Navigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import DashboardShell from "../components/DashboardShell";
 import { palette } from "../theme";
+import { getCurrentUser, logout } from "../lib/auth";
 import {
   addExpense,
   deleteExpense,
-  EXPENSE_CATEGORIES,
-  expensesByCategory,
-  getExpenses,
-  totalExpenses,
-  type Expense,
-} from "../lib/expenses";
-import { getCurrentUser } from "../lib/session";
-import { getAccounts } from "../lib/accounts";
-
-const TREASURER_ROLE = "Treasurer";
-
-function formatINR(n: number) {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    maximumFractionDigits: 0,
-  }).format(n);
-}
-
-function formatDate(iso: string) {
-  try {
-    return new Date(iso).toLocaleDateString("en-IN", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    });
-  } catch {
-    return iso;
-  }
-}
-
-const todayISO = () => new Date().toISOString().slice(0, 10);
+  fetchExpenseCategories,
+  fetchExpenseTotals,
+  fetchExpenses,
+} from "../lib/expenseApi";
+import { fetchLedger } from "../lib/maintenance";
+import type { Expense, ExpenseTotals } from "../lib/types";
+import { formatDate, formatINR, todayISO, toNumber } from "../lib/format";
 
 export default function ExpenditureDashboard() {
+  const navigate = useNavigate();
   const user = getCurrentUser();
-  const [expenses, setExpenses] = useState<Expense[]>(() => getExpenses());
+
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [totals, setTotals] = useState<ExpenseTotals | null>(null);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [collected, setCollected] = useState<number>(0);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const [openForm, setOpenForm] = useState(false);
   const [form, setForm] = useState({
     date: todayISO(),
-    category: EXPENSE_CATEGORIES[0],
+    category: "",
     description: "",
     amount: "",
   });
   const [formError, setFormError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const isTreasurer = user?.role === "treasurer";
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const [items, t, cats, ledger] = await Promise.all([
+        fetchExpenses(),
+        fetchExpenseTotals(),
+        fetchExpenseCategories(),
+        fetchLedger().catch(() => null),
+      ]);
+      setExpenses(items);
+      setTotals(t);
+      setCategories(cats);
+      if (ledger) {
+        setCollected(toNumber(ledger.totals.total_received));
+      }
+      setForm((f) => ({ ...f, category: f.category || cats[0] || "" }));
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Could not load expenses.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     document.title = "Expenditure · CardMaster Enclave";
   }, []);
 
-  const sortedExpenses = useMemo(
-    () => [...expenses].sort((a, b) => b.date.localeCompare(a.date)),
-    [expenses]
-  );
-
-  const total = useMemo(() => totalExpenses(expenses), [expenses]);
-
-  const byCategory = useMemo(() => {
-    const map = expensesByCategory(expenses);
-    return Object.entries(map).sort((a, b) => b[1] - a[1]);
-  }, [expenses]);
-
-  const collected = useMemo(() => {
-    return getAccounts().reduce((s, a) => s + a.lastPaidAmount, 0);
+  // Mount-only fetch. See MaintenanceDashboard for why `user` cannot be a dep.
+  useEffect(() => {
+    void reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  if (!user) return <Navigate to="/login" replace />;
+
+  const total = useMemo(() => toNumber(totals?.total ?? null), [totals]);
   const net = collected - total;
 
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
-
-  const isTreasurer = user.role === TREASURER_ROLE;
+  const byCategory = useMemo<[string, number][]>(() => {
+    const spent: Record<string, number> = {};
+    if (totals) {
+      for (const [cat, val] of Object.entries(totals.by_category)) {
+        spent[cat] = toNumber(val);
+      }
+    }
+    const known = new Set(categories);
+    const merged: [string, number][] = categories.map((c) => [c, spent[c] ?? 0]);
+    for (const [cat, val] of Object.entries(spent)) {
+      if (!known.has(cat)) merged.push([cat, val]);
+    }
+    return merged.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  }, [totals, categories]);
 
   const resetForm = () => {
     setForm({
       date: todayISO(),
-      category: EXPENSE_CATEGORIES[0],
+      category: categories[0] ?? "",
       description: "",
       amount: "",
     });
@@ -116,42 +131,48 @@ export default function ExpenditureDashboard() {
   };
 
   const closeExpenseDialog = () => {
+    if (saving) return;
     setOpenForm(false);
     setFormError(null);
   };
 
-  const submitExpense = () => {
+  const submitExpense = async () => {
     const amount = Number(form.amount);
     const category = form.category.trim();
     const description = form.description.trim();
-    if (!form.date) {
-      setFormError("Please pick a date.");
-      return;
+    if (!form.date) return setFormError("Please pick a date.");
+    if (!category) return setFormError("Category is required.");
+    if (!description) return setFormError("Description is required.");
+    if (!Number.isFinite(amount) || amount <= 0)
+      return setFormError("Enter a valid amount greater than zero.");
+    setSaving(true);
+    try {
+      await addExpense({ spent_on: form.date, category, description, amount });
+      await reload();
+      setOpenForm(false);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Could not save expense.");
+    } finally {
+      setSaving(false);
     }
-    if (!category) {
-      setFormError("Category is required.");
-      return;
-    }
-    if (!description) {
-      setFormError("Description is required.");
-      return;
-    }
-    if (!Number.isFinite(amount) || amount <= 0) {
-      setFormError("Enter a valid amount greater than zero.");
-      return;
-    }
-    addExpense({ date: form.date, category, description, amount });
-    setExpenses(getExpenses());
-    closeExpenseDialog();
   };
 
-  const removeExpense = (id: number) => {
-    deleteExpense(id);
-    setExpenses(getExpenses());
+  const removeExpense = async (id: number) => {
+    try {
+      await deleteExpense(id);
+      await reload();
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : "Could not delete expense.");
+    }
+  };
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login");
   };
 
   return (
-    <DashboardShell user={user}>
+    <DashboardShell user={user} onLogout={handleLogout}>
       <Stack spacing={0.5} sx={{ mb: 3 }}>
         <Typography
           sx={{
@@ -171,6 +192,10 @@ export default function ExpenditureDashboard() {
         </Typography>
       </Stack>
 
+      {loadError && (
+        <Alert severity="error" sx={{ mb: 2, borderRadius: 0 }}>{loadError}</Alert>
+      )}
+
       <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 3 }}>
         <StatTile
           label="Total Expenditure"
@@ -179,15 +204,15 @@ export default function ExpenditureDashboard() {
           accent="#c62828"
         />
         <StatTile
-          label="Maintenance Collected"
+          label="Maintenance Received (FY)"
           value={formatINR(collected)}
-          sub="Sum of last payments"
+          sub="Sum of FY payments"
           accent="#2e7d32"
         />
         <StatTile
           label="Net Balance"
           value={formatINR(net)}
-          sub="Collected − spent"
+          sub="Received − spent"
           accent={palette.gold}
         />
       </Stack>
@@ -239,26 +264,39 @@ export default function ExpenditureDashboard() {
                 <HeaderCell>Date</HeaderCell>
                 <HeaderCell>Category</HeaderCell>
                 <HeaderCell>Description</HeaderCell>
+                <HeaderCell>Recorded by</HeaderCell>
                 <HeaderCell align="right">Amount</HeaderCell>
                 {isTreasurer && <HeaderCell align="right">Action</HeaderCell>}
               </TableRow>
             </TableHead>
             <TableBody>
-              {sortedExpenses.length === 0 ? (
+              {loading ? (
                 <TableRow>
                   <TableCell
-                    colSpan={isTreasurer ? 5 : 4}
+                    colSpan={isTreasurer ? 6 : 5}
+                    sx={{ textAlign: "center", py: 5 }}
+                  >
+                    <CircularProgress size={24} sx={{ color: palette.gold }} />
+                  </TableCell>
+                </TableRow>
+              ) : expenses.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={isTreasurer ? 6 : 5}
                     sx={{ textAlign: "center", py: 5, color: palette.muted }}
                   >
                     No expenses recorded yet.
                   </TableCell>
                 </TableRow>
               ) : (
-                sortedExpenses.map((e) => (
+                expenses.map((e) => (
                   <TableRow key={e.id} hover>
-                    <TableCell sx={{ color: palette.muted }}>{formatDate(e.date)}</TableCell>
+                    <TableCell sx={{ color: palette.muted }}>{formatDate(e.spent_on)}</TableCell>
                     <TableCell sx={{ fontWeight: 600 }}>{e.category}</TableCell>
                     <TableCell>{e.description}</TableCell>
+                    <TableCell sx={{ color: palette.muted, fontSize: 13 }}>
+                      {e.created_by_name || "—"}
+                    </TableCell>
                     <TableCell align="right" sx={{ fontVariantNumeric: "tabular-nums" }}>
                       {formatINR(e.amount)}
                     </TableCell>
@@ -280,7 +318,7 @@ export default function ExpenditureDashboard() {
             </TableBody>
           </Table>
         </TableContainer>
-        {sortedExpenses.length > 0 && (
+        {expenses.length > 0 && (
           <Box
             sx={{
               display: "flex",
@@ -390,7 +428,7 @@ export default function ExpenditureDashboard() {
               onChange={(e) => setForm((f) => ({ ...f, category: e.target.value }))}
               fullWidth
             >
-              {EXPENSE_CATEGORIES.map((c) => (
+              {categories.map((c) => (
                 <MenuItem key={c} value={c}>
                   {c}
                 </MenuItem>
@@ -402,6 +440,7 @@ export default function ExpenditureDashboard() {
               onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
               fullWidth
               placeholder="What was it for?"
+              inputProps={{ maxLength: 200 }}
             />
             <TextField
               label="Amount (₹)"
@@ -412,23 +451,22 @@ export default function ExpenditureDashboard() {
               inputProps={{ min: 1, step: 100 }}
             />
             {formError && (
-              <Alert severity="error" sx={{ borderRadius: 0 }}>
-                {formError}
-              </Alert>
+              <Alert severity="error" sx={{ borderRadius: 0 }}>{formError}</Alert>
             )}
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={closeExpenseDialog} color="inherit">
+          <Button onClick={closeExpenseDialog} color="inherit" disabled={saving}>
             Cancel
           </Button>
           <Button
             variant="contained"
             color="primary"
             onClick={submitExpense}
+            disabled={saving}
             sx={{ letterSpacing: "0.14em", textTransform: "uppercase" }}
           >
-            Save Expense
+            {saving ? "Saving…" : "Save Expense"}
           </Button>
         </DialogActions>
       </Dialog>
