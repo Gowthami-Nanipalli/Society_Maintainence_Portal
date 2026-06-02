@@ -1,71 +1,69 @@
-# Prototype — Webinar Demo Guide
+# Prototype — Treasurer Dashboard Walk-through
 
-A single-file, zero-setup prototype of the Society Maintenance Portal, built to **demo
-to your lead and brainstorm**. It is a clickable mock — data lives in memory and resets
-on refresh. No backend, no database, no install.
+A single-file, zero-setup mock of the **Treasurer Dashboard** for the Society
+Maintenance Portal. It is the visual reference the production React app is
+built against. No backend, no database — state lives in memory and resets on
+refresh.
 
 ## How to run
-Double-click **`prototype/index.html`** (opens in any browser). Works offline.
+Double-click **`prototype/index.html`** (opens in any modern browser). Works
+offline. To preview the production build instead, run the FastAPI backend +
+Vite frontend per the root README.
 
-## Menu bar
-A top menu bar runs across the app:
-- **Before login:** Home · **Sign In** · **Sign Up**
-- **After login:** Dues · **Expenditure** · **My Payments** · **Collected Balance** · Complaints · (account pill + Sign out)
+## What this prototype shows
 
-## Dashboards (after login)
-- **Expenditure** — society spend, with a total tile, an itemized table, and a by-category breakdown. The Treasurer can **+ Add expense**; other roles see it read-only.
-- **My Payments** — the logged-in user's own unit payment history (date, cycle, amount) with total-paid and current-status tiles. (Treasurer has no unit, so it shows a "not linked" note.)
-- **Collected Balance** — society funds: **maintenance collected − expenditure = net available balance**, plus outstanding dues yet to collect and a projected balance.
+A signed-in Treasurer's view of the maintenance ledger for **FY 2025-26**.
+The page contains:
 
-> **Raising a complaint requires signing in.** Once authenticated, any role can post a
-> complaint (FR-18). There is no public/guest complaint form.
+- **Topbar** — society heading + an avatar (`TR`) that opens a four-item
+  menu: Profile · Assign Maintenance · Record Payment · Logout.
+- **Members panel** — one row per plot with the six locked columns:
+  S.No · Plot No · Name of the Member · Amount To Be Paid · Status ·
+  Transaction History.
+- **TOTAL footer row** — sum of every member's outstanding due.
 
-## 5-minute demo script
+Numeric cells are colour-coded: red background when amount > 0, green text
+when the row is cleared.
 
-0. **Landing menu bar** — Start on **Home**. Walk the menu: **Sign In** and **Sign Up**
-   (resident self-registration request, approved by Treasurer per FR-4a).
+## Modals
 
-1. **Login / roles (FR-1, FR-2, FR-3)** — Click **Sign In** → enter credentials. Maintenance
-   details are **not** accessible until you authenticate. Demo accounts (password `demo123`),
-   click any to auto-fill:
-   - `treasurer@society.in` — Treasurer (admin)
-   - `sharma@society.in` — Householder (A-101)
-   - `reddy@society.in` — Secretary · `mehta@society.in` — President
+### Transaction History (per-member)
+Click **View (N)** on any row to open a modal showing:
 
-   Sign in as **Householder** first.
+- A table with **From Date · To Date · Amount Paid · Outstanding Amount**,
+  one row per recorded payment. Outstanding decreases chronologically.
+- A footer pill **"Amount need to be paid"** mirroring the main dashboard's
+  due figure for that plot.
 
-2. **Due-alert pop-up (FR-15, FR-16)** — Signing in as the Householder for unit A-101
-   triggers the dues reminder pop-up automatically (it's suppressed when Cleared, FR-17).
+### Record Payment (avatar menu → Record Payment)
+Multi-select dialog used to credit a payment to many members in one go.
+Fields: payment date, amount, mode (Cash / Bank / UPI / Cheque), and a
+checkbox list of members with each one's current due. The summary line at
+the bottom shows **Selected: N · Total received: ₹X**.
 
-3. **Dues table (FR-4, FR-12)** — Show the table: green `Cleared` / red `Pending` badges,
-   balances and advances. Note all roles can *see* everyone's dues but not edit.
+### Assign Maintenance (avatar menu → Assign Maintenance)
+Multi-select dialog used to **add** an amount to selected members' payable
+balance — for example, to raise an extraordinary levy. Fields: from-date,
+to-date, amount payable, and the same checkbox list. Bottom summary shows
+**Selected: N · Total charged: ₹X**. There is no Mode field — assigning
+maintenance is not a payment, it raises what's owed.
 
-4. **Switch to Treasurer** (top-right "Switch role"). Now the **Record payment** buttons
-   and **House No. lookup** appear.
+## How the prototype maps to the production app
 
-5. **House No. lookup pop-up (FR-17a)** — Type `A-101` → see last-payment summary
-   "relative to the plan" (last month / quarter / year).
+| Prototype piece                | Production location                                                                 |
+|--------------------------------|--------------------------------------------------------------------------------------|
+| 6-column members table         | `frontend/src/pages/MaintenanceDashboard.tsx` — `<TableHead>` and the row map        |
+| Avatar 4-item menu             | `frontend/src/components/DashboardShell.tsx` — `<Menu>` block, Treasurer-gated items |
+| Transaction History modal      | `MaintenanceDashboard.tsx` — `historyOpen` dialog, `fetchBillDetail(...)` API call   |
+| Record Payment modal           | `MaintenanceDashboard.tsx` — `payOpen` dialog, multi-call `recordPayment(...)`       |
+| Assign Maintenance modal       | `MaintenanceDashboard.tsx` — `assignOpen` dialog, `assignMaintenance(...)` API call  |
 
-6. **Record a payment (FR-8–FR-11b)** — On a Pending unit (e.g. C-310, due ₹3,000):
-   - Pay **₹1,500** → status stays `Pending`, balance ₹1,500 (**partial payment**).
-   - Then pay **₹2,000** → `Cleared`, and **₹500 stored as advance** (overpayment rolls
-     forward, BR-5). The result pop-up shows balance/advance/status snapshots.
+Production differences worth knowing:
 
-7. **Complaints (FR-18–FR-22)** — Post a complaint (post date auto-set). **Attach photos**
-   via "Click to add images" — thumbnails preview, the × removes one, and click any thumbnail
-   to enlarge it. Posted images show inline in the complaints list. Note the **"Mark resolved"**
-   button only shows on complaints **you** authored (BR-3); resolved date is auto-stamped.
-
-## What's faithful to the spec vs. mocked
-- **Faithful:** role-based UI, cycle derivation (Monthly/Quarterly/Annual), the
-  payment→balance→advance→status computation (TRD §3.2/§3.3/§3.4), the two distinct
-  pop-ups, and the complaint lifecycle.
-- **Mocked for the demo:** auth (role picker, no real passwords), persistence (in-memory),
-  and "today" is fixed to 2026-05-27 so the demo is stable.
-
-## Good brainstorming prompts for the lead
-- The **open questions** in PRD Appendix B — esp. **arrears** (what if several cycles go
-  unpaid?) and **email/SMS** reminders vs. in-app only.
-- Should the Treasurer dashboard surface a **"who's pending" summary** at the top?
-- Is a single Treasurer enough, or do we need a backup admin?
-- Do complaints need **categories / comments** (currently just post + resolve)?
+- The production backend is the source of truth (PostgreSQL via FastAPI). The
+  prototype keeps its own in-memory `state` array.
+- The production app uses MUI components and the gold/cream brand palette; the
+  prototype is hand-styled CSS so it can ship as a single HTML file.
+- The production "Amount Paid" timeline shows `paid_on` only — the backend
+  Payment model doesn't yet store per-payment from/to ranges, so the From/To
+  columns mirror the same date.

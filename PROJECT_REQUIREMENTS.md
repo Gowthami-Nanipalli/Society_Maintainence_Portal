@@ -3,196 +3,289 @@
 | Field              | Value                              |
 |--------------------|------------------------------------|
 | **Document Title** | Society Maintenance Portal — Requirements Specification |
-| **Version**        | 1.0 (Draft)                        |
-| **Date**           | 2026-05-27                         |
-| **Status**         | Draft for Review                   |
-| **Author**         | Deccansoft Team                    |
-| **Companion Doc**  | TECHNICAL_REQUIREMENTS.md (TRD v1.0) |
+| **Version**        | 2.0 (As-Built)                     |
+| **Date**           | 2026-06-02                         |
+| **Status**         | Reflects current production build  |
+| **Companion Doc**  | TECHNICAL_REQUIREMENTS.md (TRD v2.0) |
+
+> Version 2.0 is an as-built rewrite. The original v1.0 spec (monthly/quarterly/
+> annual plans, complaint module, SQL Server) was superseded by the FY-based
+> ledger model now shipping. Items dropped from v1.0 are listed in §6.
 
 ---
 
 ## 1. Overview
 
 ### 1.1 Purpose
-The Society Maintenance Portal is a web-based application that lets a residential community manage maintenance-fee collection and resident complaints in one place. It gives the **Treasurer** the tools to record payments, assign billing plans, and track dues, while giving **Householders, Secretary, and President** a transparent, read-only view of every householder's payment status and balances. The portal also provides a shared complaint-tracking workflow open to all residents.
+The Society Maintenance Portal is a web application for **Arihant CardMaster
+Enclave** that manages the society's annual maintenance ledger. It gives the
+**Treasurer** the tools to assign maintenance dues and record received
+payments, lets the **Secretary** approve new resident accounts, gives the
+**President** read-access to the same ledger, and lets each **Community
+Member** see their own bill and pay history.
 
-### 1.2 Scope
-**In scope (v1.0):**
-- Role-based access (Treasurer vs. read-only users).
-- Maintenance billing with Monthly / Quarterly / Annual plans per householder.
-- Recording of payments (house no., date paid, amount paid), balance tracking, and automatic payment status.
-- Dashboard alerts/pop-ups reminding householders of pending dues based on plan and last-paid date.
-- Complaint posting by any user, with auto-generated post date and resolved date.
-- "Mark as Resolved" restricted to the complaint's original author.
+### 1.2 Scope (v2.0 — shipped)
+- Role-based access for four roles: Treasurer, Secretary, President,
+  Community Member.
+- Annual maintenance billing keyed by Indian **Fiscal Year** (Apr 1 – Mar 31)
+  with a configurable default annual payable amount (₹88,000).
+- One **Maintenance Bill** per (member, fiscal year). Bills are auto-created
+  for every active member with a plot when the ledger is opened.
+- **Record Payment** (Treasurer-only, multi-select) — credit one amount to
+  many members in one action.
+- **Assign Maintenance** (Treasurer-only, multi-select) — raise the payable
+  amount on selected bills (e.g. extraordinary levy).
+- **Transaction History** dialog per member with chronological running
+  outstanding.
+- **Signup → Approval workflow** — anyone may register; Secretary approves or
+  rejects pending accounts. Only `active` accounts appear in the ledger.
+- **Expenditure ledger** — Treasurer adds/deletes expense entries; everyone
+  with an account can read.
+- **Audit log** of credential changes, approvals, payments, expense changes,
+  signups, and Assign actions; visible to officers.
+- **JWT-based auth** with bcrypt-hashed passwords; self-service email and
+  password changes for any signed-in user.
 
-**Out of scope (v1.0):**
-- Online payment gateway / actual money transfer (payments are recorded manually by the Treasurer).
-- SMS/email notifications (in-app alerts only — candidate for v2.0).
-- Accounting/expense management beyond maintenance collection.
+### 1.3 Out of scope (current build)
+- Online payment gateway / actual money transfer.
+- Email / SMS / WhatsApp notifications.
+- Complaint module.
 - Multi-society / multi-tenant support.
+- House-No lookup pop-up and dues-reminder pop-up (deferred from v1.0).
+- Advance / carry-forward balances (current model: payable − received,
+  floored at zero).
 
-### 1.3 Definitions
-| Term              | Meaning                                                                     |
-|-------------------|-----------------------------------------------------------------------------|
-| **Householder**   | Resident who owns a flat/house and pays maintenance.                        |
-| **Plan**          | Billing frequency chosen by the householder: Monthly, Quarterly, or Annual. |
-| **Billing Cycle** | The period covered by one payment, derived from the plan.                   |
-| **Balance**       | Outstanding amount the householder still owes for the current cycle.        |
-| **Status**        | Computed state of a householder's dues: `Cleared` or `Pending`.             |
+### 1.4 Definitions
+| Term                   | Meaning                                                                |
+|------------------------|------------------------------------------------------------------------|
+| **Fiscal Year (FY)**   | Apr 1 to Mar 31; labelled `FY 25/26` for 2025-04-01..2026-03-31.       |
+| **Maintenance Bill**   | One row per `(member, fiscal_year)` holding `payable_amount`.          |
+| **Payable Amount**     | What the member must pay for the FY (default ₹88,000, editable).       |
+| **Received Amount**    | Sum of all payments recorded against the bill.                         |
+| **Closing Balance**    | `max(payable − received, 0)`. The "Amount To Be Paid" shown on screen. |
+| **Status**             | `Cleared` if `received ≥ payable`, else `Pending`.                     |
+| **Officer**            | Treasurer, Secretary, or President.                                    |
 
 ---
 
 ## 2. Users & Roles
 
-| Role            | Access Level                | Capabilities                                                                                                                                                                                                                          |
-|-----------------|-----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **Treasurer**   | Read + Write (Sole Admin)   | Manage user accounts and role assignment; add/edit householder records; assign plans; record payments (including partial); update amounts paid, balances, and advances; view all householders' data; post and resolve own complaints. |
-| **Householder** | Read-only (community-wide)  | View any householder's payment status, balance, and payment history; view own due alerts; post complaints; resolve own complaints.                                                                                                    |
-| **Secretary**   | Read-only (community-wide)  | View any householder's payment status, balances, and history; post complaints; resolve own complaints.                                                                                                                               |
-| **President**   | Read-only (community-wide)  | View any householder's payment status, balances, and history; post complaints; resolve own complaints.                                                                                                                               |
+| Role                 | Database value      | Read access                          | Write access                                                                    |
+|----------------------|---------------------|--------------------------------------|---------------------------------------------------------------------------------|
+| **Treasurer**        | `treasurer`         | Full ledger, expenses, audit log     | Record payments, Assign Maintenance, add/delete expenses, self profile          |
+| **Secretary**        | `secretary`         | Full ledger, expenses, audit log, member list | Approve/reject pending signups, self profile                          |
+| **President**        | `president`         | Full ledger, expenses, audit log     | Self profile only                                                               |
+| **Community Member** | `community_member`  | Full ledger (read-only), own profile | Self profile only                                                               |
 
-> **Note:** The **Treasurer is the sole Admin** — the only role that can create/modify financial records *and* manage user accounts and role assignments. **All roles (including Householders) can view every householder's maintenance-bill data** (read-only). All four roles share equal rights in the complaint module.
+There are exactly three seed officer accounts (Treasurer / Secretary /
+President), created idempotently from `SEED_*` environment variables. The
+seeder never overwrites an existing officer password hash — rotation happens
+through the API.
 
 ---
 
 ## 3. Functional Requirements
 
-### 3.1 Authentication & Authorization
-- **FR-1** The system shall require every user to log in with a unique username/email and password.
-- **FR-2** The system shall assign each user exactly one role (Treasurer, Householder, Secretary, President).
-- **FR-3** The system shall enforce role-based permissions on every page and action (e.g., financial edit forms are hidden/blocked for non-Treasurer roles).
-- **FR-4** The system shall let **all roles view every householder's** maintenance-bill data (read-only); only the Treasurer can edit it.
-- **FR-4a** The Treasurer, as sole Admin, shall create, edit, and deactivate user accounts and assign each user a role.
+### 3.1 Authentication & Account Lifecycle
+- **FR-1** Users log in with `email` **or** `mobile` plus a password. The
+  backend returns a signed JWT access token (default 12-hour lifetime).
+- **FR-2** Anyone may **sign up** (`POST /api/auth/signup`). Signups land in
+  status `pending` with role `community_member` and can log in immediately
+  with read-only access to non-bill pages.
+- **FR-3** A signed-in user can change their own **profile** (name, mobile,
+  house, plot), **email** (re-prompt for current password), and **password**.
+- **FR-4** `POST /api/auth/forgot-password` always returns the same response
+  regardless of whether the identifier exists; the attempt is audited but no
+  email/SMS is dispatched in v2.0.
 
-### 3.2 Householder & Plan Management (Treasurer)
-- **FR-5** The Treasurer shall add a householder record containing: **House No.**, householder name, contact, and assigned **Plan** (Monthly / Quarterly / Annual).
-- **FR-6** The Treasurer shall edit a householder's plan; changing a plan recalculates the next due date and status.
-- **FR-7** The system shall store the **maintenance amount per cycle** for each plan (configurable by Treasurer).
+### 3.2 Approval Workflow (Secretary)
+- **FR-5** The Secretary lists `pending` accounts (`GET /api/members/pending`)
+  and approves or rejects each one (`POST /api/members/{id}/approval`).
+- **FR-6** Approval flips status to `active`, stamps `approved_at` /
+  `approved_by_id`, and adds the member's plot to the next ledger view.
+- **FR-7** Rejection flips status to `rejected`; logins are then blocked with
+  a "request was declined" message.
 
-### 3.3 Payment Recording (Treasurer)
-- **FR-8** The Treasurer shall record a payment with: **House No.**, **Date of Payment**, **Amount Paid**.
-- **FR-9** The system shall compute and store the **Balance Amount** = (amount due for cycle − amount paid) for the active cycle.
-- **FR-10** The system shall maintain a **payment history** per householder (date, amount, cycle covered, recorded-by).
-- **FR-11 (Partial payments)** The Treasurer shall be able to record **partial payments**; the balance shall reflect the remaining due for the cycle, and the status shall stay `Pending` until the cycle is fully paid.
-- **FR-11a (Advance / carry-forward)** When a householder pays **more than** the current cycle's due, the system shall store the surplus as an **advance balance** and automatically apply it toward upcoming cycle(s), reducing or clearing their next due.
-- **FR-11b** The system shall display each householder's current **advance/credit balance** alongside their dues.
+### 3.3 Maintenance Ledger (all roles, read)
+- **FR-8** `GET /api/maintenance/ledger` returns the ledger for an FY. If no
+  `fy_start_year` query is given, the backend resolves the current FY by date
+  (Apr–Mar rule). The current UI pins requests to FY 2025-26.
+- **FR-9** Opening the ledger auto-creates a `MaintenanceBill` for every
+  active community member with a plot number that doesn't yet have a bill for
+  that FY. The seed amount is `DEFAULT_ANNUAL_MAINTENANCE` (env var, ₹88,000).
+- **FR-10** Every row in the response includes: `bill_id, member_id,
+  member_name, plot_no, fiscal_year_label, payable_amount, received_amount,
+  closing_balance, status, last_payment_on, last_payment_amount`. Status is
+  `"Cleared" | "Pending"`, derived server-side.
+- **FR-11** Totals returned alongside the rows: `total_payable,
+  total_received, total_closing, cleared_count, pending_count, member_count`.
 
-### 3.4 Payment Status & Due Calculation
-- **FR-12** The system shall compute each householder's status as:
-  - **`Cleared`** — the current cycle's amount is fully paid (balance = 0 for the active cycle).
-  - **`Pending`** — the current cycle is unpaid or partially paid, determined from the **last paid date** and the **plan mode**.
-- **FR-13** The "current cycle" shall be derived from the plan:
-  - *Monthly* — the current calendar month.
-  - *Quarterly* — the current 3-month quarter.
-  - *Annual* — the current year.
-- **FR-14** When today's date passes the cycle boundary without full payment, the status shall automatically become `Pending`.
+### 3.4 Record Payment (Treasurer)
+- **FR-12** `POST /api/maintenance/payments` creates a `Payment` row with
+  `bill_id, amount, paid_on, method, reference?, note?`. Method is one of
+  `cash | bank | upi | cheque | other`.
+- **FR-13** The endpoint rejects amounts ≤ 0, amounts that exceed the
+  remaining outstanding, and any attempt to pay an already-cleared bill (409).
+- **FR-14** The frontend's multi-select dialog applies the same `amount` to
+  each selected bill, **capped at that bill's remaining outstanding**.
+  Already-cleared bills are skipped. Per-bill calls are independent
+  (`Promise.allSettled`); the UI reports "recorded N · skipped M".
+- **FR-15** Every successful payment writes an `audit_log` entry summarising
+  who paid what for which member's bill.
 
-### 3.5 Due Alerts / Pop-up Reminders
-- **FR-15** When a Householder with `Pending` status logs in (or opens their dashboard), the system shall display a **pop-up/alert message** prompting them to clear their dues.
-- **FR-16** The alert shall state the pending cycle, amount due, balance, and any advance/credit available.
-- **FR-17** The alert shall not appear when status is `Cleared`.
-- **FR-17a (House No. lookup pop-up)** When the Treasurer enters a **House No.** in the portal, the system shall display a **pop-up summarizing that householder's most recent payment relative to their plan** — i.e., **last month's** payment details for a Monthly plan, **last quarter's** for Quarterly, and **last year's** for Annual — including last paid date, amount, balance, and current `Cleared`/`Pending` status.
+### 3.5 Assign Maintenance (Treasurer)
+- **FR-16** `POST /api/maintenance/assign` accepts
+  `{ bill_ids, amount, from_date, to_date }` and **adds** `amount` to
+  `payable_amount` of every bill whose id is in `bill_ids`. All selected
+  bills must belong to the same FY (validated server-side).
+- **FR-17** The action is treasurer-only. It writes an `audit_log` entry of
+  type `maintenance_assigned` with the bill ids, amount, and period.
+- **FR-18** `from_date` / `to_date` are advisory (recorded in the audit
+  payload) — they do not change the bill's FY or constrain future payments.
 
-### 3.6 Complaints Module (All Users)
-- **FR-18** Any user (any role) shall be able to post a complaint/concern with a title and description.
-- **FR-19** The system shall auto-generate and display a **Post Date** when a complaint is created.
-- **FR-20** The system shall provide a **"Mark as Resolved"** button visible only to the **user who posted** that complaint.
-- **FR-21** When marked resolved, the system shall auto-generate and store the **Resolved Date**.
-- **FR-22** All users shall be able to **view all complaints**, including both the Post Date and Resolved Date and current state (Open / Resolved).
+### 3.6 Transaction History (any role)
+- **FR-19** `GET /api/maintenance/bills/{id}` returns the bill row plus a
+  list of every payment against it (`paid_on, amount, method, reference,
+  note, recorded_by_name`). The UI walks the payments oldest-first to display
+  a running outstanding that ticks down chronologically.
+
+### 3.7 Expenses (Treasurer write, all read)
+- **FR-20** Treasurer adds / deletes expense entries (date, category,
+  description, amount). All signed-in users can read the expense list and
+  totals (per category, overall).
+- **FR-21** Every expense add and delete writes an `audit_log` entry.
+
+### 3.8 Audit Log (Officers)
+- **FR-22** Officers can read the audit log (`GET /api/audit-log`). Each
+  entry stores actor, action key, entity type/id, human-readable summary, an
+  optional JSON payload, and timestamp. Community members cannot read it.
 
 ---
 
-## 4. Rules & Quality Attributes
-
-### 4.1 Business Rules
-| ID | Rule |
-|----|------|
-| **BR-1** | Status is always derived (computed), never set manually, except indirectly through recorded payments. |
-| **BR-2** | Only the Treasurer can create or modify any financial data, and the Treasurer is the sole Admin who manages user accounts and roles. |
-| **BR-3** | Only the original author of a complaint can mark it resolved. |
-| **BR-4** | Post Date and Resolved Date are system-generated timestamps and cannot be edited by users. |
-| **BR-5** | A cycle balance is never negative; any overpayment becomes an **advance/credit** that automatically applies to future cycles. |
-| **BR-6** | A householder has exactly one active plan at a time. |
-| **BR-7** | All roles can read every householder's maintenance-bill data; write access is Treasurer-only. |
-
-### 4.2 Non-Functional Requirements
-- **NFR-1 Security:** Passwords stored hashed; all financial actions authorized server-side (never trust client-side role checks).
-- **NFR-2 Usability:** Responsive UI usable on mobile and desktop; status shown with clear color cues (green = Cleared, red = Pending).
-- **NFR-3 Auditability:** Every payment record stores who recorded it and when.
-- **NFR-4 Performance:** Dashboard and status pages load within ~2 seconds for a community of up to ~500 units.
-- **NFR-5 Data Integrity:** Payments and complaints are persisted in a relational database with referential integrity.
-- **NFR-6 Availability:** Reasonable uptime for a community-scale app; daily database backups.
+## 4. Business Rules
+| ID    | Rule                                                                                       |
+|-------|--------------------------------------------------------------------------------------------|
+| BR-1  | `closing_balance = max(payable_amount − received_amount, 0)`; never negative.              |
+| BR-2  | `status` is computed every read; it is never persisted as user-editable truth.             |
+| BR-3  | Each `(member, fiscal_year)` pair has at most one `MaintenanceBill` (unique constraint).   |
+| BR-4  | Only the Treasurer can record payments or assign maintenance.                              |
+| BR-5  | Only the Secretary can approve or reject pending signups.                                  |
+| BR-6  | A community member account must be `active` and have a `plot_no` to appear in the ledger.  |
+| BR-7  | Officer accounts are seeded once; the seeder never overwrites their password hashes.       |
+| BR-8  | A payment's `amount` must be strictly positive and ≤ the bill's remaining outstanding.     |
+| BR-9  | The Assign endpoint rejects bills spanning multiple fiscal years in one call.              |
+| BR-10 | Authentication tokens are JWTs; identity is re-checked from the DB on every authed call.   |
 
 ---
 
-## 5. Key User Flows
+## 5. Non-Functional Requirements
+- **NFR-1 Security** — passwords stored bcrypt-hashed; role enforcement on
+  every write route (`require_treasurer`, `require_secretary`,
+  `require_officer`); CORS restricted to configured origins.
+- **NFR-2 Auditability** — every credential change, approval, payment,
+  expense, signup, and assign is written to `audit_log` with actor + summary.
+- **NFR-3 Data Integrity** — referential FKs and CHECK constraints in
+  PostgreSQL: unique `(member, fiscal_year)`, `payable_amount >= 0`,
+  `amount > 0`, 10-digit mobile, unique email/mobile.
+- **NFR-4 Usability** — responsive MUI layout; clear colour cues (red
+  background = pending due, green text = cleared, MUI Chip for status).
+- **NFR-5 Performance** — single ledger query per page load (`/ledger`), one
+  subsequent call per row (`/bills/{id}`) only when the History modal opens.
 
-### 5.1 Treasurer records a payment
-1. Treasurer logs in → enters a **House No.**
-2. System shows a **pop-up of that householder's last payment** for their plan (last month / quarter / year), with last paid date, amount, balance, and status.
-3. Treasurer enters Date of Payment and Amount Paid (full or partial).
-4. System updates the cycle balance; any surplus is stored as **advance** and auto-applied to upcoming cycles.
-5. System recomputes status (`Cleared` / `Pending`); payment appears in the householder's history.
+---
 
-### 5.2 Householder checks status
-1. Householder logs in.
-2. If `Pending`, a pop-up alert prompts them to clear dues (cycle + amount).
-3. Householder views balance and full payment history (read-only).
+## 6. What changed since v1.0
+| v1.0 plan                                            | v2.0 (shipped)                                                       |
+|------------------------------------------------------|----------------------------------------------------------------------|
+| Monthly / Quarterly / Annual plans per householder   | Single annual FY bill (Apr–Mar), one row per (member, FY)            |
+| Complaint module (post, resolve, post/resolved date) | Not implemented                                                      |
+| Dues-reminder pop-up on login                        | Not implemented                                                      |
+| House-No lookup pop-up                               | Not implemented (replaced by Transaction History dialog)             |
+| Advance / carry-forward balances                     | Not implemented (closing balance floored at 0)                       |
+| Treasurer manages user accounts                      | Secretary approves signups; Treasurer focuses on the ledger          |
+| SQL Server                                           | PostgreSQL                                                           |
+| Term "Householder"                                   | Term "Community Member" (role `community_member`)                    |
+| Generic "House No."                                  | First-class `plot_no` field (e.g. "1 & 2")                           |
 
-### 5.3 Complaint lifecycle
-1. Any user posts a complaint → Post Date auto-set, state = Open.
-2. All users can view it (with Post Date).
-3. The author clicks "Mark as Resolved" → Resolved Date auto-set, state = Resolved.
-4. All users see both dates and the Resolved state.
+---
+
+## 7. Key User Flows
+
+### 7.1 New resident gets into the ledger
+1. Resident clicks **Sign Up**, enters name, email, mobile, house, plot,
+   password → account created `pending`.
+2. They can log in immediately but see no bill rows for themselves.
+3. The Secretary opens **Approvals**, sees them in the pending list, clicks
+   **Approve**.
+4. On their next ledger reload, a `MaintenanceBill` is auto-created for them
+   at the default amount, and they appear in everyone's table.
+
+### 7.2 Treasurer records a payment (multi-select)
+1. Treasurer opens **Avatar → Record Payment**.
+2. Sets payment date, amount, mode.
+3. Ticks every member who paid that amount today and clicks **Record
+   Payment**.
+4. Backend creates one `Payment` row per selected bill (each amount capped at
+   that bill's remaining). UI shows the success/skipped count and refreshes.
+
+### 7.3 Treasurer raises an extra levy
+1. Treasurer opens **Avatar → Assign Maintenance**.
+2. Sets from-date / to-date (advisory), amount.
+3. Ticks every affected member and clicks **Assign Maintenance**.
+4. Backend adds the amount to each bill's `payable_amount` in one
+   transaction, writes a `maintenance_assigned` audit entry, and returns the
+   refreshed ledger.
+
+### 7.4 Member checks their dues
+1. Community member logs in.
+2. Maintenance tab shows the full ledger; their row is highlighted by being
+   their own plot.
+3. They click **View (N)** on their row → Transaction History modal lists
+   every payment plus the running outstanding and the current Amount To Be
+   Paid.
 
 ---
 
 ## Appendix A — Conceptual Data Model
+```
+User              (id, name, email, mobile, house, plot_no, role, status,
+                   password_hash, is_seed, approved_at, approved_by_id, …)
+FiscalYear        (id, label "FY 25/26", start_year, start_date, end_date)
+MaintenanceBill   (id, member_id → User, fiscal_year_id → FiscalYear,
+                   plot_no, payable_amount, notes)
+Payment           (id, bill_id → MaintenanceBill, amount, paid_on, method,
+                   reference, note, recorded_by_id → User)
+Expense           (id, spent_on, category, description, amount,
+                   created_by_id → User)
+AuditLog          (id, actor_id, actor_label, action, entity_type,
+                   entity_id, summary, payload JSONB, created_at)
+```
 
-**User** — `id, name, email, password_hash, role`
-
-**Householder / Unit** — `id, house_no, householder_name, contact, plan (Monthly|Quarterly|Annual), amount_per_cycle, advance_balance, user_id (nullable FK → User; links the householder's login)`
-
-**Payment** — `id, householder_id, payment_date, amount_paid, cycle_label, applied_to_cycle, balance_after, advance_after, is_partial, recorded_by (treasurer_id), created_at`
-
-**ComputedStatus (derived/view)** — `householder_id, current_cycle, amount_due, amount_paid, balance, advance_balance, status (Cleared|Pending), last_paid_date`
-
-**Complaint** — `id, author_user_id, title, description, post_date, resolved_date (nullable), state (Open|Resolved)`
-
-*Key relationships:* a User (Householder) → one Householder/Unit → many Payments; any User → many Complaints.
-
----
-
-## Appendix B — Assumptions, Confirmed Decisions & Open Questions
-
-**Assumptions**
-- Payments are received offline (cash/bank) and entered manually by the Treasurer; the portal does not process money.
-- Each household maps to one Householder login.
-
-**Confirmed decisions (from stakeholder review)**
-1. ✅ **All roles** (including Householders) can view **every** householder's maintenance-bill data (read-only).
-2. ✅ **Partial payments** and **advance/carry-forward** are required in v1.0.
-3. ✅ Entering a **House No.** triggers a pop-up of that householder's **last payment relative to their plan** (last month / quarter / year).
-4. ✅ The **Treasurer is the sole Admin** and manages all user accounts and role assignments.
-
-**Remaining open questions**
-1. Should reminders also go out via **email/SMS**, or are in-app pop-ups enough for v1.0?
-2. Should complaints support **comments/threads** or **categories**, or is a simple post + resolve enough for v1.0?
-3. For advances, should the surplus apply automatically to the **immediate next cycle only**, or roll across **multiple** future cycles until exhausted? *(Current spec assumes it rolls across multiple cycles.)*
-4. **Arrears across multiple unpaid cycles** — the model tracks a single "current cycle." When several cycles go unpaid, should outstanding balances **accumulate** across cycles, or is only the current cycle's due ever owed? *(Not yet specified; forward-rolling advances are modeled, backward-rolling arrears are not.)*
-5. **Timezone for cycle/"today" computation** — should "current month/quarter/year" and the `Pending` boundary use **UTC** (timestamps default to `SYSUTCDATETIME()`) or **society-local time**? This affects status at month/quarter boundaries.
-6. **Password recovery** — FR-1/FR-4a cover login and Treasurer-managed accounts but not a **forgotten-password / reset** flow, nor who sets the initial password.
+Relationships: one User → many MaintenanceBills (one per FY) → many Payments;
+one User → many Expenses created; one User → many AuditLog entries.
 
 ---
 
-## Appendix C — Indicative Tech Stack
+## Appendix B — Open Questions / v3 Candidates
+1. Per-payment from/to period — backend currently stores `paid_on` only, so
+   the Transaction History dialog shows the same date in both From and To
+   columns. Worth schema-extending if quarterly receipts become important.
+2. House-No lookup pop-up (FR-17a in v1.0) — not implemented; the current
+   "View (N)" button covers the same need from inside the ledger.
+3. Advance / credit balance — not modelled. Decide whether to support
+   overpayment carry-forward.
+4. Email / SMS / WhatsApp reminders for `Pending` rows.
+5. Whether to add a Complaints module (v1.0 had one; dropped from v2.0).
 
-| Layer | Option |
-|-------|--------|
-| Frontend | React |
-| Backend | Python |
-| Database | SQL Server |
-| Auth    | JWT or session-based with hashed passwords |
-| Hosting | Azure App Service / any cloud or on-prem |
+---
 
-*(Final stack to be confirmed based on team preference and existing infrastructure. The detailed, committed stack lives in the companion TRD.)*
+## Appendix C — Shipped Tech Stack (summary)
+| Layer    | Tech                                                |
+|----------|-----------------------------------------------------|
+| Frontend | React 18 + TypeScript, Vite, MUI 5, React Router 6  |
+| Backend  | Python 3.11+, FastAPI, SQLAlchemy 2.x, Alembic      |
+| Auth     | JWT (PyJWT) + bcrypt (passlib)                      |
+| Database | PostgreSQL 14+ (psycopg v3 driver)                  |
+| Hosting  | Vercel (SPA), self-hosted or container for the API  |
+
+Detailed stack and database schema live in **TECHNICAL_REQUIREMENTS.md**.

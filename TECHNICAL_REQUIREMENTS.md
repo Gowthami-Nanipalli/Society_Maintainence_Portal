@@ -3,329 +3,468 @@
 | Field              | Value                          |
 |--------------------|--------------------------------|
 | **Document Title** | Society Maintenance Portal — Technical Requirements |
-| **Version**        | 1.0 (Draft)                    |
-| **Date**           | 2026-05-27                     |
-| **Status**         | Draft for Review               |
-| **Author**         | Deccansoft Team                |
-| **Companion Doc**  | PROJECT_REQUIREMENTS.md (PRD v1.0) |
+| **Version**        | 2.0 (As-Built)                 |
+| **Date**           | 2026-06-02                     |
+| **Status**         | Reflects current production build |
+| **Companion Doc**  | PROJECT_REQUIREMENTS.md (PRD v2.0) |
+
+> v2.0 documents what is actually shipping. The v1.0 plan (SQL Server,
+> Monthly/Quarterly/Annual plans, complaints) was abandoned during build.
 
 ---
 
-## 1. Overview
+## 1. Architecture
 
-### 1.1 Purpose & Scope
-This TRD translates the functional requirements in the PRD (v1.0) into a concrete
-technical design and implementation plan. It defines the technology stack, system
-architecture, API contract, database schema, security model, and the core
-computation logic (billing cycles, balances, advances) needed to build the portal.
+### 1.1 System diagram
+```
++----------------------------+        HTTPS / JSON         +-----------------------------+
+|   React 18 + TypeScript    |  <----------------------->  |  FastAPI (Python 3.11+)     |
+|   (Vite, MUI 5, RR6)       |   Authorization: Bearer JWT |  Uvicorn ASGI               |
+|   localhost:5173 (dev)     |                             |  localhost:8000 (dev)       |
++-------------+--------------+                             +--------------+--------------+
+              |                                                           |
+              | localStorage: access token + last AuthUser snapshot       | SQLAlchemy 2.x
+              |                                                           | Alembic migrations
+              v                                                           v
+       Browser route guards                                  +-----------------------------+
+       (read role from token / /auth/me)                     |  PostgreSQL 14+             |
+                                                             |  (psycopg v3 driver)        |
+                                                             +-----------------------------+
+```
 
-Scope is bound to PRD v1.0: role-based access, maintenance billing (Monthly /
-Quarterly / Annual), manual payment recording with partial payments and advances,
-computed due status, in-app due alerts, and the complaints module. Out of scope:
-online payment gateway, email/SMS, multi-tenancy.
-
-### 1.2 Stack at a Glance
-A typed, three-tier web app: **React 18 + TypeScript** SPA → **Python 3.12 + FastAPI**
-REST API → **Microsoft SQL Server 2022 / Azure SQL**, with **JWT** stateless auth and
-hosting on **Azure**. The full stack table with rationale is in **Appendix A**.
-
-### 1.3 Key Design Principles
-- **Three-tier**: React SPA → FastAPI REST API → SQL Server.
-- **Stateless auth**: JWT access tokens; the backend re-validates role on every
-  write endpoint (NFR-1 — never trust client-side role checks).
-- **Derived status**: `Cleared`/`Pending`, balances, and advances are computed
-  server-side from payment records and the active plan, never stored as
-  user-editable truth (BR-1).
+### 1.2 Repository layout
+```
+Society_Maintainence_Portal/
+├── backend/
+│   ├── alembic/                  versioned migrations
+│   │   └── versions/20260601_0001_initial_schema.py
+│   ├── app/
+│   │   ├── core/                 config, security (JWT/bcrypt), RBAC deps, audit
+│   │   ├── crud/                 query helpers (users, maintenance)
+│   │   ├── db/                   SQLAlchemy engine + session + Base
+│   │   ├── models/               ORM models
+│   │   ├── routers/              auth, members, maintenance, expenses, audit
+│   │   ├── schemas/              Pydantic v2 request/response models
+│   │   ├── main.py               FastAPI app + CORS + router wiring
+│   │   ├── seed.py               officer (Treasurer/Secretary/President) seeder
+│   │   └── seed_members.py       (optional) demo community-member seeder
+│   ├── .env.example
+│   ├── alembic.ini
+│   └── requirements.txt
+├── frontend/
+│   ├── src/
+│   │   ├── components/           DashboardShell, ProfileDialog, Logo, …
+│   │   ├── lib/                  api, auth, format, types, maintenance,
+│   │   │                         expenseApi, members
+│   │   ├── pages/                Login, Signup, ForgotPassword,
+│   │   │                         MaintenanceDashboard, ExpenditureDashboard,
+│   │   │                         Approvals
+│   │   ├── App.tsx               router + route guards
+│   │   └── theme.ts              palette + MUI theme overrides
+│   ├── .env.example              VITE_API_BASE_URL=http://localhost:8000
+│   ├── package.json
+│   └── vite.config.ts
+├── prototype/
+│   ├── index.html                single-file Treasurer dashboard mock
+│   └── DEMO_GUIDE.md
+├── PROJECT_REQUIREMENTS.md
+└── TECHNICAL_REQUIREMENTS.md
+```
 
 ---
 
-## 2. Architecture & Security Model
+## 2. Tech Stack
 
-### 2.1 System Architecture
-```
-+-------------------+        HTTPS / JSON         +----------------------+
-|   React SPA       |  <----------------------->  |  FastAPI Backend     |
-|  (Vite, MUI, TSX) |     Bearer JWT in header    |  (Uvicorn ASGI)      |
-+-------------------+                             +----------+-----------+
-        |                                                    |
-        | Route guards by role                               | SQLAlchemy / pyodbc
-        | (Treasurer write, others read-only)                |
-        v                                                    v
-  Browser localStorage                              +----------------------+
-  (access token only)                               |  SQL Server 2022     |
-                                                     |  (relational store)  |
-                                                     +----------------------+
-```
+### 2.1 Backend
+| Concern               | Choice                                  | Notes                                                |
+|-----------------------|-----------------------------------------|------------------------------------------------------|
+| Language / runtime    | Python 3.11+                            |                                                       |
+| Web framework         | FastAPI                                 | Auto-OpenAPI, dependency injection used for RBAC.    |
+| ASGI server           | Uvicorn (`uvicorn[standard]`)           | `--reload` in dev.                                   |
+| ORM                   | SQLAlchemy 2.x                          | Typed `Mapped[...]` models.                          |
+| Migrations            | Alembic                                 | One baseline migration shipped.                      |
+| DB driver             | `psycopg` (v3)                          | URL prefix `postgresql+psycopg://...`.               |
+| Schemas / validation  | Pydantic v2                             | `model_config = ConfigDict(from_attributes=True)`.   |
+| Password hashing      | `passlib[bcrypt]`                       | bcrypt cost left at library default.                 |
+| JWT                   | `PyJWT`                                 | HS256, `sub` = user id, `role` claim included.       |
+| CORS                  | Starlette `CORSMiddleware`              | Origin allowlist from `CORS_ALLOW_ORIGINS` env.      |
 
-### 2.2 Role Enforcement Matrix (server-side, implements FR-3)
-| Action                              | Treasurer | Householder | Secretary | President |
-|-------------------------------------|:---------:|:-----------:|:---------:|:---------:|
-| Manage users / assign roles         |     ✅    |     ❌      |     ❌    |     ❌    |
-| Add/edit householders & plans       |     ✅    |     ❌      |     ❌    |     ❌    |
-| Record payments                     |     ✅    |     ❌      |     ❌    |     ❌    |
-| View any householder's bill data    |     ✅    |     ✅      |     ✅    |     ✅    |
-| Post complaint                      |     ✅    |     ✅      |     ✅    |     ✅    |
-| Resolve **own** complaint           |     ✅    |     ✅      |     ✅    |     ✅    |
+### 2.2 Frontend
+| Concern              | Choice                                   |
+|----------------------|------------------------------------------|
+| Language             | TypeScript                               |
+| Build / dev server   | Vite 5                                   |
+| UI library           | React 18 + Material UI 5                 |
+| Icons / fonts        | `@mui/icons-material`, Cinzel + Inter (fontsource) |
+| Routing              | React Router 6                           |
+| Data fetching        | Native `fetch` wrapped by `lib/api.ts`   |
+| Auth state           | `localStorage` (token + user snapshot)   |
+| Forms                | Plain controlled components + inline validation (no Hook Form / Zod) |
 
-> Role is re-validated on the server for every write route (NFR-1). Passwords are
-> stored bcrypt-hashed; client-side role checks are never trusted.
-
----
-
-## 3. Data Model & Core Computation Logic
-
-### 3.1 Schema Overview
-Four base tables plus one derived status view. Full column-level definitions are in
-**Appendix B**.
-
-- **`users`** — accounts, roles, hashed passwords, active flag.
-- **`householders`** (Unit) — house no., name, contact, plan, per-cycle amount, advance balance.
-- **`payments`** — each recorded payment with applied cycle, balance/advance snapshots, audit fields.
-- **`complaints`** — title, description, post/resolved timestamps, state.
-- **`vw_householder_status`** — derived `Cleared`/`Pending` status, balance, and advance per householder (see §3.4).
-
-Conventions: identity PKs use `INT IDENTITY`; money uses `DECIMAL(10,2)`; timestamps
-use `DATETIME2`; enums modeled as `VARCHAR` with `CHECK` constraints.
-
-### 3.2 Current Cycle Derivation (FR-13)
-```
-plan == Monthly   -> cycle_label = "YYYY-MM"        (current calendar month)
-plan == Quarterly -> cycle_label = "YYYY-Q{1..4}"   (current 3-month quarter)
-plan == Annual    -> cycle_label = "YYYY"           (current year)
-```
-
-### 3.3 Payment Application & Advance (FR-9, FR-11, FR-11a, BR-5)
-```
-due_for_cycle = amount_per_cycle - (already_paid_this_cycle)
-total_available = amount_paid + existing_advance_balance
-
-if total_available >= due_for_cycle:
-    balance_after = 0
-    advance_after = total_available - due_for_cycle   # surplus rolls forward
-    status = Cleared
-    # advance_after auto-applies to subsequent cycles until exhausted
-else:
-    balance_after = due_for_cycle - total_available
-    advance_after = 0
-    is_partial = (amount_paid > 0)
-    status = Pending
-```
-- A cycle balance is never negative (BR-5); surplus becomes advance and rolls
-  across multiple future cycles until exhausted (per PRD open-question default).
-
-### 3.4 Status Rule (FR-12, FR-14)
-- `Cleared` when active-cycle balance = 0.
-- `Pending` when the active cycle is unpaid/partial, or today's date crosses the
-  cycle boundary without full payment.
-
-`vw_householder_status` derives `(householder_id, current_cycle, amount_due,
-amount_paid, balance, advance_balance, status, last_paid_date)` from `householders`
-+ `payments` relative to the current date and plan. Implemented as a view for read
-endpoints; the same logic lives in the service layer for write-time recompute.
+### 2.3 Database
+- PostgreSQL 14+. Numeric money uses `NUMERIC(12, 2)`; timestamps use
+  `TIMESTAMPTZ`. Enum-like fields use `VARCHAR` with check constraints (not
+  native `pg_enum`) so values can be evolved without `ALTER TYPE` gymnastics.
 
 ---
 
-## 4. API & Frontend Design
+## 3. Security Model
 
-### 4.1 REST API Contract (FastAPI)
-> Base path `/api`. All non-auth routes require `Authorization: Bearer <jwt>`.
-> Write routes require `role == Treasurer` unless noted.
+### 3.1 Auth flow
+```
+POST /api/auth/signup   →  create user (status=pending, role=community_member)
+POST /api/auth/login    →  verify password, return { access_token, user }
+GET  /api/auth/me       →  echo current user (token-protected)
+```
+- Token: JWT, HS256, lifetime configurable via `JWT_EXPIRY_MINUTES` (default
+  720 = 12 hours). Claims: `sub` (user id, stringified), `role`, `exp`.
+- Login accepts **email or 10-digit mobile** as identifier (`find_by_identifier`).
+- Login rejects `rejected` / `disabled` accounts with 403 and a stable error.
+- `forgot-password` is a noop that always returns 202 and audits the attempt
+  (no email/SMS dispatch in v2.0).
 
-| Method  | Path                                            | Role        | Maps To       | Description                                              |
-|:-------:|:------------------------------------------------|:------------|:-------------:|:---------------------------------------------------------|
-| `POST`  | `/auth/login`                                   | Public      | FR-1          | Authenticate user and return JWT token                   |
-| `GET`   | `/users/me`                                     | Any         | FR-2          | Fetch current logged-in user details and role            |
-| `POST`  | `/users`                                        | Treasurer   | FR-4a         | Create new user and assign role                          |
-| `PATCH` | `/users/{id}`                                   | Treasurer   | FR-4a         | Edit or deactivate existing user                         |
-| `GET`   | `/householders`                                 | Any         | FR-4          | Retrieve list of householders (read-only for all roles)  |
-| `POST`  | `/householders`                                 | Treasurer   | FR-5          | Add new householder along with payment plan              |
-| `PATCH` | `/householders/{id}`                            | Treasurer   | FR-6 / FR-7   | Update plan or amount and recompute due                  |
-| `GET`   | `/householders/{id}/status`                     | Any         | FR-12         | Get computed householder status, balance, and advance    |
-| `GET`   | `/householders/by-house/{house_no}/last-payment`| Treasurer   | FR-17a        | Display last payment summary popup                       |
-| `POST`  | `/payments`                                     | Treasurer   | FR-8, FR-9, FR-11/11a/11b | Record payment and apply advance amount      |
-| `GET`   | `/householders/{id}/payments`                   | Any         | FR-10         | Retrieve payment history of householder                  |
-| `GET`   | `/dashboard/alerts`                             | Any         | FR-15 / FR-16 | Show pending due alerts for current user                 |
-| `GET`   | `/complaints`                                   | Any         | FR-22         | Retrieve all complaints                                  |
-| `POST`  | `/complaints`                                   | Any         | FR-18 / FR-19 | Submit complaint with automatic post date                |
-| `PATCH` | `/complaints/{id}/resolve`                      | Author Only | FR-20 / FR-21 | Mark complaint as resolved after author validation (BR-3)|
+### 3.2 Role enforcement (server-side, every request)
+| Dependency           | Allowed roles                                      |
+|----------------------|----------------------------------------------------|
+| `get_current_user`   | Any authenticated, non-disabled user               |
+| `require_treasurer`  | `treasurer` only                                   |
+| `require_secretary`  | `secretary` only                                   |
+| `require_officer`    | `treasurer` ∨ `secretary` ∨ `president`            |
 
-Sample — record payment:
+Frontend `<RoleGuard>` is a UX nicety; authorization is the server's job.
+
+### 3.3 Other safeguards
+- bcrypt password hashing on signup / change-password.
+- `email` and `mobile` unique constraints; CHECK enforces 10-digit mobile.
+- All inputs validated by Pydantic v2 schemas; `from_attributes=True` for
+  ORM-mode responses.
+- CORS allowlist driven by env var.
+
+---
+
+## 4. Data Model (PostgreSQL)
+
+### 4.1 `users`
+| Column           | Type            | Notes                                                                       |
+|------------------|-----------------|-----------------------------------------------------------------------------|
+| id               | serial PK       |                                                                             |
+| name             | varchar(120)    |                                                                             |
+| email            | varchar(160)    | unique, lowercased                                                          |
+| mobile           | varchar(10)     | unique, CHECK `char_length(mobile)=10`                                       |
+| house            | varchar(40)     | nullable                                                                    |
+| plot_no          | varchar(40)     | nullable; required to appear in the ledger                                  |
+| role             | varchar(32)     | enum: treasurer / president / secretary / community_member                  |
+| status           | varchar(32)     | enum: pending / active / rejected / disabled                                |
+| password_hash    | varchar(255)    | bcrypt                                                                      |
+| is_seed          | bool            | true for the three officer seed accounts                                    |
+| created_at       | timestamptz     | default `now()`                                                             |
+| updated_at       | timestamptz     | `onupdate` to `now()`                                                       |
+| approved_at      | timestamptz     | filled by `POST /api/members/{id}/approval`                                 |
+| approved_by_id   | int FK→users.id | nullable, ON DELETE SET NULL                                                |
+
+Indexes on `role` and `status`.
+
+### 4.2 `fiscal_years`
+| Column      | Type        | Notes                              |
+|-------------|-------------|------------------------------------|
+| id          | serial PK   |                                    |
+| start_year  | int         | unique, e.g. 2025                  |
+| label       | varchar     | `FY 25/26`                          |
+| start_date  | date        | `2025-04-01`                       |
+| end_date    | date        | `2026-03-31`                       |
+
+### 4.3 `maintenance_bills`
+| Column          | Type             | Notes                                                              |
+|-----------------|------------------|--------------------------------------------------------------------|
+| id              | serial PK        |                                                                    |
+| member_id       | int FK→users.id  | ON DELETE CASCADE; indexed                                         |
+| fiscal_year_id  | int FK→fiscal_years.id | ON DELETE RESTRICT; indexed                                  |
+| plot_no         | varchar(40)      | denormalised at bill-creation time (so renaming a member's plot doesn't rewrite history) |
+| payable_amount  | numeric(12,2)    | CHECK ≥ 0                                                          |
+| notes           | varchar(200)     | nullable                                                           |
+| created_at      | timestamptz      | default `now()`                                                    |
+| updated_at      | timestamptz      | `onupdate` to `now()`                                              |
+
+Unique `(member_id, fiscal_year_id)`. There is no `received_amount` column —
+the value is computed as `COALESCE(SUM(payments.amount), 0)` on read.
+
+### 4.4 `payments`
+| Column          | Type                  | Notes                                                                       |
+|-----------------|-----------------------|-----------------------------------------------------------------------------|
+| id              | serial PK             |                                                                             |
+| bill_id         | int FK→maintenance_bills.id | ON DELETE CASCADE; indexed                                            |
+| amount          | numeric(12,2)         | CHECK > 0                                                                   |
+| paid_on         | date                  |                                                                             |
+| method          | varchar(16)           | enum: cash / bank / upi / cheque / other                                    |
+| reference       | varchar(80)           | nullable (UTR / cheque no.)                                                 |
+| note            | varchar(200)          | nullable                                                                    |
+| recorded_by_id  | int FK→users.id       | nullable, ON DELETE SET NULL                                                |
+| created_at      | timestamptz           | default `now()`                                                             |
+
+### 4.5 `expenses`
+| Column          | Type             | Notes                                       |
+|-----------------|------------------|---------------------------------------------|
+| id              | serial PK        |                                             |
+| spent_on        | date             | indexed                                     |
+| category        | varchar(40)      | indexed                                     |
+| description     | varchar(200)     |                                             |
+| amount          | numeric(12,2)    | CHECK > 0                                   |
+| created_by_id   | int FK→users.id  | nullable, ON DELETE SET NULL                |
+| created_at      | timestamptz      | default `now()`                             |
+
+### 4.6 `audit_log`
+| Column        | Type             | Notes                                                  |
+|---------------|------------------|--------------------------------------------------------|
+| id            | serial PK        |                                                        |
+| actor_id      | int FK→users.id  | nullable                                               |
+| actor_label   | varchar          | snapshot like `"Name <email>"`                         |
+| action        | varchar          | e.g. `signup`, `member_approved`, `payment_recorded`, `maintenance_assigned`, `expense_added`, `password_changed` |
+| entity_type   | varchar          | `user`, `payment`, `maintenance_bill`, `expense`, …    |
+| entity_id     | int              | nullable                                               |
+| summary       | text             | human-readable                                         |
+| payload       | jsonb            | nullable                                               |
+| created_at    | timestamptz      | default `now()`                                        |
+
+---
+
+## 5. Core Business Logic
+
+### 5.1 Fiscal-year resolution (`current_fy_start_year`)
+```python
+today = today or date.today()
+return today.year if today.month >= 4 else today.year - 1
+```
+The frontend currently overrides this and always asks for `fy_start_year=2025`
+to pin the prototype's view; remove that override once a year selector ships.
+
+### 5.2 Ensuring a bill row per active plot (`ensure_bills_for_active_members`)
+For every `User` with `status = active`, `role = community_member`, and a
+non-null `plot_no`, create a `MaintenanceBill` for the given FY if one
+doesn't exist, seeded with `DEFAULT_ANNUAL_MAINTENANCE` (env var). Idempotent.
+
+### 5.3 Ledger projection (`ledger_rows`)
+One SQL query joins `MaintenanceBill ↔ User` and LEFT JOINs a grouped
+`payments` subquery:
+```sql
+SELECT bill.*, user.*,
+       COALESCE(SUM(payment.amount), 0) AS received_amount,
+       MAX(payment.paid_on)             AS last_paid_on
+FROM   maintenance_bills bill
+JOIN   users user            ON user.id = bill.member_id
+LEFT JOIN ( SELECT bill_id, SUM(amount) AS received, MAX(paid_on) AS last_paid_on
+            FROM payments GROUP BY bill_id ) p
+       ON p.bill_id = bill.id
+WHERE  bill.fiscal_year_id = :fy_id
+ORDER BY bill.plot_no, user.name;
+```
+Per row:
+```
+closing_balance = max(payable_amount - received_amount, 0)
+status          = "Cleared" if received_amount >= payable_amount else "Pending"
+```
+Totals (`total_payable`, `total_received`, `total_closing`, `cleared_count`,
+`pending_count`, `member_count`) are aggregated in the same Python loop.
+
+### 5.4 Record-payment validation
+```
+remaining = payable_amount - already_received
+if remaining <= 0:                      → 409 "already fully cleared"
+if payload.amount > remaining:          → 400 "amount exceeds outstanding"
+otherwise insert Payment, audit, commit, return BillDetail.
+```
+
+### 5.5 Assign-maintenance application
+```
+load bills WHERE id IN bill_ids
+reject if any fiscal_year_id differs
+for bill in bills:
+    bill.payable_amount += payload.amount
+audit "maintenance_assigned" with bill_ids, amount, from/to
+commit; return refreshed ledger
+```
+
+### 5.6 Frontend multi-select Record Payment
+Loop over selected bills, send one POST per bill with
+`min(enteredAmount, closing_balance)`, skip already-cleared. Uses
+`Promise.allSettled` so a single failure doesn't take down the whole batch;
+UI reports `"recorded N · skipped M"`.
+
+---
+
+## 6. REST API Contract (FastAPI)
+
+Base prefix: `/api`. All routes except `/auth/signup`, `/auth/login`,
+`/auth/forgot-password`, and `/health` require
+`Authorization: Bearer <jwt>`.
+
+### 6.1 Auth — `app/routers/auth.py`
+| Method | Path                       | Role         | Purpose                                      |
+|--------|----------------------------|--------------|----------------------------------------------|
+| POST   | `/api/auth/signup`         | Public       | Create pending community member              |
+| POST   | `/api/auth/login`          | Public       | Verify password, return JWT + UserOut        |
+| POST   | `/api/auth/forgot-password`| Public       | Audited noop; always 202                     |
+| GET    | `/api/auth/me`             | Authed       | Echo current user                            |
+
+### 6.2 Members — `app/routers/members.py`
+| Method | Path                                    | Role        | Purpose                                              |
+|--------|-----------------------------------------|-------------|------------------------------------------------------|
+| GET    | `/api/members`                          | Officer     | List members (filter by status/role)                 |
+| GET    | `/api/members/pending`                  | Officer     | List pending signups                                 |
+| POST   | `/api/members/{id}/approval`            | Secretary   | Approve / reject (`{approve: bool}`)                 |
+| PATCH  | `/api/members/me`                       | Authed      | Update name/mobile/house/plot                        |
+| POST   | `/api/members/me/change-email`          | Authed      | Change own email (verifies current password)         |
+| POST   | `/api/members/me/change-password`       | Authed      | Change own password                                  |
+
+### 6.3 Maintenance — `app/routers/maintenance.py`
+| Method | Path                                       | Role       | Purpose                                                      |
+|--------|--------------------------------------------|------------|--------------------------------------------------------------|
+| GET    | `/api/maintenance/fiscal-years`            | Authed     | List FYs (desc)                                              |
+| GET    | `/api/maintenance/ledger?fy_start_year=Y`  | Authed     | Ledger rows + totals for an FY (auto-seeds bills)            |
+| GET    | `/api/maintenance/bills/{id}`              | Authed     | Bill detail + payments                                       |
+| POST   | `/api/maintenance/payments`                | Treasurer  | Record one payment (returns updated `BillDetail`)            |
+| POST   | `/api/maintenance/assign`                  | Treasurer  | Add amount to many bills' `payable_amount`                   |
+
+### 6.4 Expenses — `app/routers/expenses.py`
+| Method | Path                          | Role       | Purpose                       |
+|--------|-------------------------------|------------|-------------------------------|
+| GET    | `/api/expenses`               | Authed     | List + totals                 |
+| POST   | `/api/expenses`               | Treasurer  | Add one expense               |
+| DELETE | `/api/expenses/{id}`          | Treasurer  | Remove one expense            |
+
+### 6.5 Audit — `app/routers/audit.py`
+| Method | Path             | Role      | Purpose         |
+|--------|------------------|-----------|-----------------|
+| GET    | `/api/audit-log` | Officer   | Tail audit log  |
+
+### 6.6 Example — record payment
 ```http
-POST /api/payments
-{ "house_no": "A-101", "payment_date": "2026-05-20", "amount_paid": 3000.00 }
--> 201
-{ "payment_id": 88, "applied_to_cycle": "2026-05", "balance_after": 0,
-  "advance_after": 500.00, "status": "Cleared" }
+POST /api/maintenance/payments
+Authorization: Bearer …
+Content-Type: application/json
+
+{
+  "bill_id": 7,
+  "amount": 22000,
+  "paid_on": "2026-04-15",
+  "method": "upi",
+  "reference": "UTR123456",
+  "note": "Q1 instalment"
+}
+```
+Response `201`:
+```json
+{
+  "bill":     { /* MaintenanceBillRow with updated received/closing */ },
+  "payments": [ /* PaymentOut[] ordered newest-first */ ]
+}
 ```
 
-### 4.2 Frontend Structure
+### 6.7 Example — assign maintenance
+```http
+POST /api/maintenance/assign
+{ "bill_ids": [3,4,7], "amount": 5000,
+  "from_date": "2025-10-01", "to_date": "2025-12-31" }
 ```
-src/
-  api/             # Axios client, typed endpoint wrappers, JWT interceptor
-  auth/            # login, token storage, role context, route guards
-  components/      # shared UI (StatusBadge, DueAlertDialog, PaymentForm)
-  features/
-    householders/  # householder list, detail, plan edit (Treasurer)
-    payments/      # record payment + last-payment pop-up (Treasurer)
-    dashboard/     # status + due-alert pop-up
-    complaints/    # list, post, resolve-own
-  routes/          # React Router config with <RoleGuard>
-  hooks/           # TanStack Query hooks
+Response `200`:
+```json
+{ "updated_count": 3, "fiscal_year": {...}, "rows": [...], "totals": {...} }
 ```
-- `StatusBadge`: green = Cleared, red = Pending (NFR-2).
-- `DueAlertDialog`: shown on login when the current householder's status is `Pending`, and suppressed when `Cleared` (FR-15/16/17).
-- House-No lookup pop-up uses `/householders/by-house/{house_no}/last-payment` (FR-17a).
 
 ---
 
-## 5. Delivery Plan & Operations
+## 7. Frontend Code Map
 
-### 5.1 Non-Functional Mapping
-| NFR    | Implementation                                                              |
-|--------|-----------------------------------------------------------------------------|
-| NFR-1  | bcrypt hashing; server-side role checks on every write route                |
-| NFR-2  | MUI responsive layout; color-coded `StatusBadge`                            |
-| NFR-3  | `recorded_by` + `created_at` on every payment                               |
-| NFR-4  | Status view + indexed FKs; TanStack Query caching → <2s for ~500 units      |
-| NFR-5  | FK constraints + CHECK constraints in SQL Server                            |
-| NFR-6  | Daily Azure SQL automated backups                                           |
+```
+frontend/src/
+├── App.tsx                        Router + <RoleGuard>; pre-fetches /auth/me on mount
+├── theme.ts                       palette (gold/cream/ink) and MUI theme
+├── components/
+│   ├── DashboardShell.tsx         Topbar (avatar + 4-item menu), sub-nav
+│   ├── ProfileDialog.tsx          Self profile / email / password forms
+│   └── Logo.tsx
+├── lib/
+│   ├── api.ts                     fetch wrapper; attaches Authorization header
+│   ├── auth.ts                    login / logout / getCurrentUser / localStorage
+│   ├── format.ts                  formatINR, formatDate, todayISO, toNumber
+│   ├── types.ts                   shared response types (mirror Pydantic shapes)
+│   ├── maintenance.ts             fetchLedger, fetchBillDetail, recordPayment,
+│   │                              assignMaintenance
+│   ├── expenseApi.ts              fetchExpenses, addExpense, deleteExpense
+│   └── members.ts                 listPending, approveMember, updateProfile, …
+└── pages/
+    ├── Login.tsx
+    ├── Signup.tsx
+    ├── ForgotPassword.tsx
+    ├── MaintenanceDashboard.tsx   6-column ledger + Record Payment + Assign +
+    │                              Transaction History
+    ├── ExpenditureDashboard.tsx
+    └── Approvals.tsx              Secretary-only pending list
+```
 
-### 5.2 Phased Delivery Plan
-| Phase | Deliverable                                                                |
-|-------|----------------------------------------------------------------------------|
-| **0** | Repo, CI, Docker, DB schema + Alembic baseline                             |
-| **1** | Auth + user management (Treasurer admin) — FR-1..4a                        |
-| **2** | Householder & plan management — FR-5..7                                    |
-| **3** | Payment recording + balance/advance engine — FR-8..11b, FR-12..14         |
-| **4** | Dashboard alerts + House-No pop-up — FR-15..17a                           |
-| **5** | Complaints module — FR-18..22                                             |
-| **6** | Hardening: tests, NFR pass, deploy to Azure                               |
-
-### 5.3 Open Technical Decisions (from PRD Appendix B)
-1. **Email/SMS reminders** — out of v1.0; in-app pop-ups only. (Revisit v2.0.)
-2. **Complaint threads/categories** — v1.0 = simple post + resolve.
-3. **Advance roll-over** — confirmed: surplus rolls across *multiple* future
-   cycles until exhausted (implemented in §3.3).
-4. **Arrears across multiple unpaid cycles** — `vw_householder_status` currently
-   evaluates only the active cycle. Whether unpaid prior cycles accumulate into the
-   outstanding balance is undecided (PRD Appendix B, open question 4).
-5. **Timezone for cycle/`Pending` computation** — timestamps default to
-   `SYSUTCDATETIME()` (UTC); confirm whether cycle/"today" boundaries should use UTC
-   or society-local time (PRD Appendix B, open question 5).
-6. **`already_paid_this_cycle` source** — computed as `SUM(payments.amount_paid)`
-   where `applied_to_cycle = current cycle`; surfaced via `vw_householder_status`.
-
----
-
-## Appendix A — Technology Stack
-
-| Layer            | Technology                                   | Rationale                                              |
-|------------------|----------------------------------------------|--------------------------------------------------------|
-| **Frontend**     | React 18 + TypeScript, built with Vite       | Type safety for money logic; fast dev loop             |
-| UI components    | Material UI (MUI)                            | Responsive, accessible, easy color cues (NFR-2)        |
-| Routing          | React Router                                 | SPA navigation with route guards                       |
-| Data fetching    | TanStack Query + Axios                       | Caching, retries, JWT interceptors                     |
-| Forms            | React Hook Form + Zod                        | Validated payment/complaint forms                      |
-| **Backend**      | Python 3.12 + FastAPI                        | Async, typed, auto OpenAPI docs                        |
-| ORM / migrations | SQLAlchemy 2.x + Alembic                     | Relational mapping + versioned schema                  |
-| Schemas          | Pydantic v2                                  | Request/response validation                            |
-| Auth             | python-jose (JWT) + passlib[bcrypt]          | Hashed passwords, stateless auth (NFR-1)               |
-| Server           | Uvicorn (ASGI)                               | Production ASGI runtime                                |
-| **Database**     | Microsoft SQL Server 2022 / Azure SQL        | Relational integrity (NFR-5)                           |
-| DB driver        | pyodbc + ODBC Driver 18 for SQL Server       | Supported MS connector                                 |
-| **Testing**      | Pytest (API), Vitest + RTL (UI)              | Unit/integration coverage                              |
-| **Quality**      | Ruff, Black, mypy / ESLint, Prettier         | Lint, format, type-check                               |
-| **DevOps**       | Git + GitHub, Docker, GitHub Actions (CI/CD) | Reproducible builds & pipelines                        |
-| **Hosting**      | Azure App Service (API), Static Web Apps (UI), Azure SQL DB | Matches PRD hosting note          |
+Key UI mappings to the prototype:
+- 6-column table → `MaintenanceDashboard.tsx`, `<TableHead>` block (`ProtoHeader`s)
+- Avatar menu (4 items for Treasurer) → `DashboardShell.tsx` `<Menu>` block
+- Multi-select Record Payment dialog → `MaintenanceDashboard.tsx`, `payOpen`
+- Multi-select Assign Maintenance dialog → `MaintenanceDashboard.tsx`, `assignOpen`
+- Transaction History dialog → `MaintenanceDashboard.tsx`, `historyOpen`
 
 ---
 
-## Appendix B — Database Schema (SQL Server)
+## 8. Local Setup
 
-> Identity PKs use `INT IDENTITY`. Money uses `DECIMAL(10,2)`. Timestamps use
-> `DATETIME2`. Enums modeled as `VARCHAR` with `CHECK` constraints.
-
-### `users`
-| Column         | Type            | Notes                                                  |
-|----------------|-----------------|--------------------------------------------------------|
-| id             | INT IDENTITY PK |                                                        |
-| name           | NVARCHAR(120)   | NOT NULL                                               |
-| email          | NVARCHAR(255)   | UNIQUE, NOT NULL                                       |
-| password_hash  | NVARCHAR(255)   | NOT NULL                                               |
-| role           | VARCHAR(20)     | CHECK IN ('Treasurer','Householder','Secretary','President') |
-| is_active      | BIT             | DEFAULT 1                                              |
-| created_at     | DATETIME2       | DEFAULT SYSUTCDATETIME()                               |
-
-### `householders`  (Unit)
-| Column            | Type            | Notes                                              |
-|-------------------|-----------------|----------------------------------------------------|
-| id                | INT IDENTITY PK |                                                    |
-| house_no          | NVARCHAR(20)    | UNIQUE, NOT NULL                                   |
-| householder_name  | NVARCHAR(120)   | NOT NULL                                           |
-| contact           | NVARCHAR(40)    |                                                    |
-| plan              | VARCHAR(10)     | CHECK IN ('Monthly','Quarterly','Annual')          |
-| amount_per_cycle  | DECIMAL(10,2)   | NOT NULL (FR-7)                                    |
-| advance_balance   | DECIMAL(10,2)   | DEFAULT 0 (FR-11a/b)                               |
-| user_id           | INT FK→users.id | nullable                                           |
-
-### `payments`
-| Column          | Type                     | Notes                                     |
-|-----------------|--------------------------|-------------------------------------------|
-| id              | INT IDENTITY PK          |                                           |
-| householder_id  | INT FK→householders.id   | NOT NULL                                  |
-| payment_date    | DATE                     | NOT NULL (FR-8)                           |
-| amount_paid     | DECIMAL(10,2)            | NOT NULL                                  |
-| cycle_label     | NVARCHAR(20)             | e.g. '2026-05', '2026-Q2', '2026'         |
-| applied_to_cycle| NVARCHAR(20)             | cycle the payment was applied to          |
-| balance_after   | DECIMAL(10,2)            | snapshot after applying (FR-9)            |
-| advance_after   | DECIMAL(10,2)            | advance snapshot after applying           |
-| is_partial      | BIT                      | DEFAULT 0 (FR-11)                         |
-| recorded_by     | INT FK→users.id          | NOT NULL (NFR-3)                          |
-| created_at      | DATETIME2                | DEFAULT SYSUTCDATETIME()                  |
-
-### `complaints`
-| Column          | Type             | Notes                                             |
-|-----------------|------------------|---------------------------------------------------|
-| id              | INT IDENTITY PK  |                                                   |
-| author_user_id  | INT FK→users.id  | NOT NULL                                          |
-| title           | NVARCHAR(200)    | NOT NULL                                          |
-| description     | NVARCHAR(MAX)    |                                                   |
-| post_date       | DATETIME2        | DEFAULT SYSUTCDATETIME(), immutable (BR-4)        |
-| resolved_date   | DATETIME2        | nullable                                          |
-| state           | VARCHAR(10)      | CHECK IN ('Open','Resolved') DEFAULT 'Open'       |
-
-### Computed Status (SQL VIEW or service-layer computation)
-`vw_householder_status(householder_id, current_cycle, amount_due, amount_paid,
-balance, advance_balance, status, last_paid_date)` — derived from `householders` +
-`payments` relative to the current date and plan (FR-12 → FR-14). Implemented as a
-view for read endpoints; the same logic lives in the service layer for write-time
-recompute.
-
----
-
-## Appendix C — Environment & Setup (Windows / Local Dev)
-
-**Backend**
+### 8.1 Backend
 ```powershell
+cd backend
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install fastapi uvicorn[standard] sqlalchemy alembic pyodbc `
-            pydantic "python-jose[cryptography]" "passlib[bcrypt]" pytest
-# Install "ODBC Driver 18 for SQL Server" separately
-uvicorn app.main:app --reload
+pip install -r requirements.txt
+copy .env.example .env                # then edit DATABASE_URL, JWT_SECRET, SEED_*
+alembic upgrade head
+python -m app.seed                    # idempotent Treasurer/Secretary/President seed
+uvicorn app.main:app --reload --port 8000
 ```
+OpenAPI docs at `http://localhost:8000/docs`.
 
-**Frontend**
+### 8.2 Frontend
 ```powershell
-npm create vite@latest frontend -- --template react-ts
 cd frontend
-npm install @mui/material @emotion/react @emotion/styled `
-            react-router-dom @tanstack/react-query axios `
-            react-hook-form zod
-npm run dev
+copy .env.example .env                # VITE_API_BASE_URL=http://localhost:8000
+npm install
+npm run dev                           # http://localhost:5173
 ```
 
-**Connection string (env var `DB_URL`)**
-```
-mssql+pyodbc://USER:PASS@HOST:1433/SocietyDb?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes
-```
+### 8.3 Environment variables
+| Var                             | Where     | Example                                                                     |
+|---------------------------------|-----------|-----------------------------------------------------------------------------|
+| `DATABASE_URL`                  | backend   | `postgresql+psycopg://postgres:postgres@localhost:5432/society_portal`      |
+| `JWT_SECRET`                    | backend   | 48-byte random                                                              |
+| `JWT_EXPIRY_MINUTES`            | backend   | `720`                                                                        |
+| `CORS_ALLOW_ORIGINS`            | backend   | `http://localhost:5173,http://127.0.0.1:5173`                                |
+| `SEED_TREASURER_EMAIL`          | backend   | `treasurer@cardmasterenclave.in`                                            |
+| `SEED_TREASURER_PASSWORD`       | backend   | (rotate via API after first run)                                            |
+| `SEED_TREASURER_NAME`           | backend   | `Society Treasurer`                                                         |
+| `SEED_PRESIDENT_*`              | backend   | analogous                                                                    |
+| `SEED_SECRETARY_*`              | backend   | analogous                                                                    |
+| `DEFAULT_ANNUAL_MAINTENANCE`    | backend   | `88000`                                                                      |
+| `VITE_API_BASE_URL`             | frontend  | `http://localhost:8000`                                                      |
+
+---
+
+## 9. Non-Functional Mapping
+| NFR    | Implementation                                                                                                                              |
+|--------|---------------------------------------------------------------------------------------------------------------------------------------------|
+| NFR-1  | bcrypt; JWT verified per request; role checked by FastAPI deps on every write route; CORS allowlist; secrets in `.env` (git-ignored).        |
+| NFR-2  | `app/core/audit.record_audit` writes one `audit_log` row per credential change, approval, payment, expense, signup, assign.                  |
+| NFR-3  | Unique `(member_id, fiscal_year_id)`; CHECKs `payable_amount >= 0`, `amount > 0`, 10-digit mobile; FKs with explicit ON DELETE rules.        |
+| NFR-4  | MUI 5 responsive layout; `Chip` for status; red/green colour cues.                                                                            |
+| NFR-5  | Ledger served by one SQL query with a grouped subquery; per-bill detail loaded on demand only when the History modal opens.                  |
+
+---
+
+## 10. Known Gaps / v3 Hooks
+1. Per-payment `period_from` / `period_to` columns to support quarter-by-quarter receipts (replaces the duplicated date in the History dialog).
+2. FY selector in the UI so 2025-26 isn't hardcoded.
+3. Advance / credit balances if overpayments need to roll forward.
+4. Email / SMS dispatch for `pending` accounts and overdue bills.
+5. Add a service-token or rate-limit on `/auth/forgot-password` once a real dispatcher exists.
+6. Consider materialising a `vw_member_ledger` view if the per-request `ensure_bills_for_active_members` write becomes a hot spot.
